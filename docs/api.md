@@ -519,13 +519,14 @@ Daftar anggota beserta peran.
 
 ### `POST /api/v1/conversations/{id}/members`
 
-Menambah anggota ke grup. **Hanya admin/pemilik.**
+Menambah anggota ke grup. **Hanya admin/pemilik.** Nama field `member_ids`
+sama dengan yang dipakai saat membuat grup.
 
 ```json
-{ "user_ids": ["7a90...", "8b01..."] }
+{ "member_ids": ["7a90...", "8b01..."] }
 ```
 
-Balasan `200` berisi daftar anggota terbaru. Anggota yang pernah keluar akan
+Balasan `200` berisi `{ "added": <jumlah> }`. Anggota yang pernah keluar akan
 dihidupkan kembali. Pengguna yang saling blokir dengan penambah dilewati diam-
 diam. Setiap penambahan menghasilkan pesan sistem dan siaran
 `conversation.updated`.
