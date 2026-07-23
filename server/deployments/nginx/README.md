@@ -3,7 +3,7 @@
 Konfigurasinya ada di [`nginx.conf`](nginx.conf).
 
 **Panduan lengkap menjalankan proyek dari laptop baru dinyalakan ada di
-[`../../nginx.md`](../../nginx.md)** — termasuk urutan startup, port forwarding,
+[`../../../docs/nginx.md`](../../../docs/nginx.md)** — termasuk urutan startup, port forwarding,
 firewall, dan troubleshooting.
 
 ## Ringkas

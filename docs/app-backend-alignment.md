@@ -1,6 +1,6 @@
 # Penyelarasan App ↔ Backend
 
-Hasil membaca [`../server/catatan-untuk-app.md`](../server/catatan-untuk-app.md) dan
+Hasil membaca [`catatan-untuk-app.md`](catatan-untuk-app.md) dan
 mencocokkannya dengan backend yang sudah ada.
 
 > **Status: sebagian besar gap sudah ditutup.** Dokumen ini awalnya adalah

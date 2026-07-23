@@ -8,16 +8,22 @@ proses dan satu binary.
 - Realtime: WebSocket sendiri (`gorilla/websocket`) + Redis Pub/Sub untuk fanout antar-instance
 - Klien: Android (Kotlin)
 
-**Untuk yang menyambungkan klien (Android/web), mulai dari sini:**
+> **Seluruh dokumentasi ada di [`../docs/`](../docs/README.md).** Berkas ini
+> khusus membahas kode Go-nya; untuk menyambungkan aplikasi, kontrak API,
+> voice room, dan cara menjalankan server, mulai dari sana.
 
-- **[`../docs/api.md`](../docs/api.md)** — kontrak integrasi lengkap: seluruh
-  endpoint REST, seluruh frame WebSocket, alur multi-langkah, bentuk data
-  persis, batasan, dan urutan pemanggilan saat aplikasi dibuka
-- [`../docs/app-backend-alignment.md`](../docs/app-backend-alignment.md) — peta
-  tiap layar aplikasi ke endpoint yang melayaninya
-- [`../docs/erd.md`](../docs/erd.md) — model data
-- [`api/openapi.yaml`](api/openapi.yaml) dan [`api/asyncapi.yaml`](api/asyncapi.yaml) — kontrak formal
-- [`nginx.md`](nginx.md) — menjalankan dari laptop baru dinyalakan
+| Cari apa | Di mana |
+|---|---|
+| Kontrak API untuk klien | [`../docs/api.md`](../docs/api.md) |
+| Voice room | [`../docs/voice-rooms.md`](../docs/voice-rooms.md) |
+| Menjalankan di laptop | [`../docs/nginx.md`](../docs/nginx.md) |
+| Model data | [`../docs/erd.md`](../docs/erd.md) |
+| Indeks seluruh dokumen | [`../docs/README.md`](../docs/README.md) |
+| Kontrak formal | [`api/openapi.yaml`](api/openapi.yaml), [`api/asyncapi.yaml`](api/asyncapi.yaml) |
+
+**Menambah atau mengubah endpoint?** Perbarui
+[`../docs/api.md`](../docs/api.md) di giliran yang sama — tabel ringkasan rute
+dan bagian detailnya. Aplikasi mengacu ke dokumen itu.
 
 ---
 
@@ -321,6 +327,9 @@ Contoh: menambahkan reaksi pesan.
 4. **Transport** — daftarkan frame di `RegisterHandlers` dan/atau rute di
    `rest.NewRouter`. Handler-nya harus tipis: decode, panggil service, balas.
 5. **Kontrak** — perbarui `api/asyncapi.yaml` / `api/openapi.yaml`.
+6. **Dokumentasi** — perbarui [`../docs/api.md`](../docs/api.md): tabel
+   ringkasan rute DAN bagian detail endpointnya. Ini wajib, bukan opsional —
+   aplikasi membangun kliennya dari dokumen itu.
 
 Kalau sebuah handler mulai berisi `if` yang menentukan siapa boleh melakukan
 apa, aturan itu salah tempat — pindahkan ke service.
