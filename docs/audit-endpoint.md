@@ -21,6 +21,10 @@ Metode: daftar `CREATE TABLE` dari `server/migrations/`, daftar rute dari
 | Tabel di skema | 21 |
 | **Tabel tanpa endpoint apa pun** | **6** ← temuan utama |
 
+> **Pembaruan 2026-07-24:** lima dari enam sudah ditutup (notifications, blocks,
+> devices, reports, user_settings). Yang tersisa: `message_attachments`
+> (lampiran media pada pesan) dan `consents` (persetujuan UU PDP).
+
 ---
 
 ## 1. Temuan terbesar: enam tabel tanpa jalan masuk
@@ -34,7 +38,7 @@ query lain — tetapi tidak ada satu pun cara membaca atau mengisinya.
 | `blocks` | Dicek di hampir **setiap** query (story, room, chat, follow), tetapi tidak ada cara memblokir — jadi pemeriksaan itu selama ini tidak pernah berarti apa-apa | ✅ diperbaiki |
 | `devices` | Push token tidak pernah bisa disimpan; FCM mustahil dipasang | ✅ diperbaiki |
 | `reports` | Kewajiban trust & safety yang saya tandai sejak analisis PRD pertama — tetap tidak bisa dipakai | ✅ diperbaiki |
-| `user_settings` | Tidak ada cara membaca atau mengubah preferensi privasi | ✅ diperbaiki |
+| `user_settings` | Tidak ada cara membaca atau mengubah preferensi privasi | ✅ GET/PATCH /users/me |
 | `message_attachments` | Layar chat punya tombol lampiran, tetapi media **tidak bisa dilampirkan ke pesan** | ❌ belum |
 | `consents` | Persetujuan UU PDP tidak pernah tercatat | ❌ belum |
 | `moderation_actions` | Untuk panel moderator; belum dibutuhkan | ❌ sengaja |
