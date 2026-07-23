@@ -241,6 +241,21 @@ Seluruh baris di tabel ini **diverifikasi jalan** lewat `server/scripts/smoke.ps
 | `POST` | `/api/v1/notifications/read` | ✅ |
 | `POST` | `/api/v1/media/upload-url` | ✅ |
 | `POST` | `/api/v1/media/{id}/confirm` | ✅ |
+| `GET` | `/api/v1/reels` | ✅ |
+| `POST` | `/api/v1/reels` | ✅ |
+| `GET` | `/api/v1/reels/me` | ✅ |
+| `GET` | `/api/v1/reels/saved` | ✅ |
+| `GET` | `/api/v1/reels/{id}` | ✅ |
+| `DELETE` | `/api/v1/reels/{id}` | ✅ |
+| `PUT` | `/api/v1/reels/{id}/like` | ✅ |
+| `DELETE` | `/api/v1/reels/{id}/like` | ✅ |
+| `PUT` | `/api/v1/reels/{id}/save` | ✅ |
+| `DELETE` | `/api/v1/reels/{id}/save` | ✅ |
+| `POST` | `/api/v1/reels/{id}/view` | ✅ |
+| `GET` | `/api/v1/reels/{id}/comments` | ✅ |
+| `POST` | `/api/v1/reels/{id}/comments` | ✅ |
+| `DELETE` | `/api/v1/reels/{id}/comments/{comment_id}` | ✅ |
+| `GET` | `/api/v1/users/{username}/reels` | ✅ |
 | `GET` | `/api/v1/ws` | ✅ |
 
 Sumbernya: [`server/internal/transport/rest/router.go`](../server/internal/transport/rest/router.go).
@@ -1094,6 +1109,145 @@ Tidak perlu header autentikasi lain; token sudah tertanam di URL.
 
 > **Prasyarat:** bucket `media` harus sudah dibuat di Supabase Dashboard →
 > Storage, dan disetel **public** agar `url` di atas bisa dibuka klien.
+
+**Batas ukuran (ditegakkan saat konfirmasi).** Byte tidak pernah masuk
+database — hanya storage key yang dicatat — tetapi tanpa batas, bucket bisa
+membengkak tak terkendali begitu reels ramai. Konfirmasi yang melampaui batas
+dibalas `413` (ukuran) atau `400` (durasi):
+
+| `kind` | Maks ukuran | Maks durasi |
+|---|---|---|
+| `image` | 10 MB | — |
+| `video` | 100 MB | 3 menit |
+| `audio` | 20 MB | — |
+| `voice_note` | 16 MB | — |
+
+Klien sebaiknya memeriksa ukuran/durasi **sebelum** mengunggah agar tidak
+membuang kuota jaringan hanya untuk ditolak saat konfirmasi.
+
+---
+
+## 8b. Reels / Shorts
+
+Video pendek vertikal (Fase 2). Sama seperti story, reel hanya **menunjuk** ke
+media yang sudah diunggah lewat §8 — byte-nya tidak pernah lewat backend.
+Feed bersifat **kronologis** (terbaru dulu), memakai cursor gabungan
+`before_at` (RFC3339) + `before_id`; ranking algoritmik dan audio-track ditunda.
+
+Visibilitas per reel: `public`, `followers` (hanya pengikut diterima), atau
+`private` (hanya pemilik). Blokir dua arah selalu menyembunyikan reel.
+
+Semua endpoint butuh autentikasi. Objek reel yang dikembalikan berbentuk:
+
+```json
+{
+  "id": "019f9b01-...",
+  "author_id": "4e12...",
+  "author_username": "budi",
+  "author_name": "Budi",
+  "media_id": "019f9a90-...",
+  "media_kind": "video",
+  "media_url": "https://.../object/public/media/video/...mp4",
+  "duration_ms": 15000,
+  "caption": "senja",
+  "visibility": "public",
+  "comments_enabled": true,
+  "like_count": 12,
+  "comment_count": 3,
+  "view_count": 240,
+  "share_count": 0,
+  "liked": false,
+  "saved": false,
+  "published_at": "2026-07-24T10:00:00Z"
+}
+```
+
+`liked`/`saved` dinilai dari sudut pandang pemanggil. `view_count` di-**dedup**
+per penonton — satu orang dihitung sekali, betapa pun sering menonton ulang.
+
+### `GET /api/v1/reels`
+
+Feed utama. Query: `limit` (maks 50), `before_at` + `before_id` untuk halaman
+berikutnya. Balasan `data` = daftar reel, `meta.next_before_at` +
+`meta.next_before_id` untuk lanjutan.
+
+### `POST /api/v1/reels`
+
+Membuat reel dari media (video/gambar) milik sendiri yang sudah **`ready`**.
+
+```json
+{ "media_id": "019f9a90-...", "caption": "senja", "visibility": "public", "comments_enabled": true }
+```
+
+`comments_enabled` opsional (default `true`), `visibility` opsional (default
+`public`). Media orang lain / salah jenis / belum selesai diproses → `403`.
+Balasan `201` berisi objek reel.
+
+### `GET /api/v1/reels/me`
+
+Reel milik pemanggil sendiri, terbaru dulu (paginasi sama).
+
+### `GET /api/v1/reels/saved`
+
+Reel yang disimpan pemanggil.
+
+### `GET /api/v1/users/{username}/reels`
+
+Reel milik pengguna lain (grid profil). Menghormati visibilitas & blokir:
+yang bukan pemilik hanya melihat yang boleh ia lihat.
+
+### `GET /api/v1/reels/{id}`
+
+Satu reel (deep-link/detail). `404` kalau tidak ada atau tidak boleh dilihat.
+
+### `DELETE /api/v1/reels/{id}`
+
+Menghapus reel milik sendiri (soft delete). Bukan milik pemanggil → `403`.
+Balasan `204`.
+
+### `PUT` / `DELETE /api/v1/reels/{id}/like`
+
+Menyukai / batal menyukai. Idempoten, `like_count` selalu akurat. `204`.
+
+### `PUT` / `DELETE /api/v1/reels/{id}/save`
+
+Menyimpan / batal menyimpan ke bookmark. `204`.
+
+### `POST /api/v1/reels/{id}/view`
+
+Mencatat tayangan. **Idempoten & di-dedup di database** — aman dipanggil tiap
+kali reel muncul di layar; hanya penonton unik pertama yang menambah counter.
+`204`.
+
+### `GET /api/v1/reels/{id}/comments`
+
+Komentar sebuah reel, terbaru dulu (paginasi `before_at` + `before_id`).
+
+```json
+{
+  "data": [{
+    "id": "019f9c01-...", "reel_id": "019f9b01-...",
+    "author_id": "4e12...", "author_username": "budi", "author_name": "Budi",
+    "parent_comment_id": null, "body": "keren!", "like_count": 0,
+    "created_at": "2026-07-24T10:05:00Z"
+  }],
+  "meta": { "count": 1 }
+}
+```
+
+### `POST /api/v1/reels/{id}/comments`
+
+Menambah komentar. Balasan hanya **satu tingkat** (`parent_id` opsional, dan
+parent tidak boleh punya parent). Reel dengan `comments_enabled: false` → `403`.
+
+```json
+{ "body": "keren!", "parent_id": null }
+```
+
+### `DELETE /api/v1/reels/{id}/comments/{comment_id}`
+
+Menghapus komentar. Boleh oleh **penulis komentar** atau **pemilik reel**
+(moderasi kontennya sendiri). Selain itu `403`. Balasan `204`.
 
 ---
 

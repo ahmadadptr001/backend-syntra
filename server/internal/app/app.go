@@ -24,6 +24,7 @@ import (
 	"github.com/ahmadadptr001/backend-syntra/internal/domain/media"
 	"github.com/ahmadadptr001/backend-syntra/internal/domain/notification"
 	"github.com/ahmadadptr001/backend-syntra/internal/domain/presence"
+	"github.com/ahmadadptr001/backend-syntra/internal/domain/reel"
 	"github.com/ahmadadptr001/backend-syntra/internal/domain/room"
 	"github.com/ahmadadptr001/backend-syntra/internal/domain/story"
 	"github.com/ahmadadptr001/backend-syntra/internal/domain/user"
@@ -94,6 +95,7 @@ func New(ctx context.Context, cfg *config.Config, log *slog.Logger) (*App, error
 	profileRepo := repo.NewProfileRepository(supa)
 	roomRepo := repo.NewRoomRepository(supa)
 	callRepo := repo.NewCallRepository(supa)
+	reelRepo := repo.NewReelRepository(supa)
 	sfu := livekit.New(cfg.LiveKit.APIKey, cfg.LiveKit.APISecret, cfg.LiveKit.URL)
 	if !sfu.Configured() {
 		log.Warn("LiveKit belum dikonfigurasi: voice room bisa dibuat tapi TIDAK akan mengeluarkan suara",
@@ -107,6 +109,7 @@ func New(ctx context.Context, cfg *config.Config, log *slog.Logger) (*App, error
 	presenceService := presence.NewService(presenceStore, cfg.WS.PresenceTTL)
 	roomService := room.NewService(roomRepo, sfu, ws.NewPublisher(hub))
 	callService := call.NewService(callRepo, sfu, ws.NewPublisher(hub))
+	reelService := reel.NewService(reelRepo)
 	notifService := notification.NewService(notifRepo, ws.NewPublisher(hub))
 	profileService := account.NewProfileService(profileRepo, profileRepo)
 
@@ -148,6 +151,7 @@ func New(ctx context.Context, cfg *config.Config, log *slog.Logger) (*App, error
 		Notif:   handler.NewNotification(notifService, mediaService),
 		Profile: handler.NewProfile(profileService, mediaService),
 		Call:    handler.NewCall(callService),
+		Reel:    handler.NewReel(reelService, mediaService),
 	})
 
 	server := &http.Server{

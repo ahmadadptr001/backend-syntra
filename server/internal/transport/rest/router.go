@@ -40,6 +40,7 @@ type Deps struct {
 	Notif   *handler.Notification
 	Profile *handler.Profile
 	Call    *handler.Call
+	Reel    *handler.Reel
 }
 
 // NewRouter membangun handler HTTP lengkap dengan middleware.
@@ -208,6 +209,41 @@ func NewRouter(d Deps) http.Handler {
 		protected(http.HandlerFunc(d.Call.Leave)))
 	mux.Handle("GET /api/v1/conversations/{id}/call",
 		protected(http.HandlerFunc(d.Call.GetActive)))
+
+	// --- reels / shorts ---
+	//
+	// Pola spesifik (me, saved, comments) didaftarkan bersama pola {id};
+	// ServeMux Go 1.22 memilih yang paling spesifik, jadi urutan tak menentukan.
+	mux.Handle("GET /api/v1/reels",
+		protected(http.HandlerFunc(d.Reel.Feed)))
+	mux.Handle("POST /api/v1/reels",
+		protected(http.HandlerFunc(d.Reel.Create)))
+	mux.Handle("GET /api/v1/reels/me",
+		protected(http.HandlerFunc(d.Reel.ListMine)))
+	mux.Handle("GET /api/v1/reels/saved",
+		protected(http.HandlerFunc(d.Reel.ListSaved)))
+	mux.Handle("GET /api/v1/reels/{id}",
+		protected(http.HandlerFunc(d.Reel.Get)))
+	mux.Handle("DELETE /api/v1/reels/{id}",
+		protected(http.HandlerFunc(d.Reel.Delete)))
+	mux.Handle("PUT /api/v1/reels/{id}/like",
+		protected(http.HandlerFunc(d.Reel.Like)))
+	mux.Handle("DELETE /api/v1/reels/{id}/like",
+		protected(http.HandlerFunc(d.Reel.Unlike)))
+	mux.Handle("PUT /api/v1/reels/{id}/save",
+		protected(http.HandlerFunc(d.Reel.Save)))
+	mux.Handle("DELETE /api/v1/reels/{id}/save",
+		protected(http.HandlerFunc(d.Reel.Unsave)))
+	mux.Handle("POST /api/v1/reels/{id}/view",
+		protected(http.HandlerFunc(d.Reel.RecordView)))
+	mux.Handle("GET /api/v1/reels/{id}/comments",
+		protected(http.HandlerFunc(d.Reel.ListComments)))
+	mux.Handle("POST /api/v1/reels/{id}/comments",
+		protected(http.HandlerFunc(d.Reel.AddComment)))
+	mux.Handle("DELETE /api/v1/reels/{id}/comments/{comment_id}",
+		protected(http.HandlerFunc(d.Reel.DeleteComment)))
+	mux.Handle("GET /api/v1/users/{username}/reels",
+		protected(http.HandlerFunc(d.Reel.ListByUser)))
 
 	// --- notifikasi ---
 	//
