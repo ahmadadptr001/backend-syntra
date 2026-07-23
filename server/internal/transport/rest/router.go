@@ -38,6 +38,7 @@ type Deps struct {
 	Media   *handler.Media
 	Room    *handler.Room
 	Notif   *handler.Notification
+	Profile *handler.Profile
 }
 
 // NewRouter membangun handler HTTP lengkap dengan middleware.
@@ -97,6 +98,12 @@ func NewRouter(d Deps) http.Handler {
 	// ServeMux Go 1.22 memilih pola yang lebih spesifik, jadi urutan penulisan
 	// sebenarnya tidak menentukan — tapi menulisnya begini membuat maksudnya
 	// terbaca oleh manusia.
+	mux.Handle("GET /api/v1/users/me",
+		protected(http.HandlerFunc(d.Profile.GetMe)))
+	mux.Handle("PATCH /api/v1/users/me",
+		protected(http.HandlerFunc(d.Profile.UpdateMe)))
+	mux.Handle("GET /api/v1/users/me/blocked",
+		protected(http.HandlerFunc(d.Profile.ListBlocked)))
 	mux.Handle("GET /api/v1/users/me/following",
 		protected(http.HandlerFunc(d.User.ListFollowing)))
 	mux.Handle("GET /api/v1/users/me/follow-requests",
@@ -111,6 +118,20 @@ func NewRouter(d Deps) http.Handler {
 		protected(http.HandlerFunc(d.User.Follow)))
 	mux.Handle("DELETE /api/v1/users/{username}/follow",
 		protected(http.HandlerFunc(d.User.Unfollow)))
+	mux.Handle("POST /api/v1/users/{username}/block",
+		protected(http.HandlerFunc(d.Profile.Block)))
+	mux.Handle("DELETE /api/v1/users/{username}/block",
+		protected(http.HandlerFunc(d.Profile.Unblock)))
+
+	// --- perangkat (push notification) ---
+	mux.Handle("POST /api/v1/devices",
+		protected(http.HandlerFunc(d.Profile.RegisterDevice)))
+	mux.Handle("DELETE /api/v1/devices/{id}",
+		protected(http.HandlerFunc(d.Profile.RevokeDevice)))
+
+	// --- laporan (trust & safety) ---
+	mux.Handle("POST /api/v1/reports",
+		protected(http.HandlerFunc(d.Profile.Report)))
 
 	// --- voice room ---
 	mux.Handle("GET /api/v1/rooms",

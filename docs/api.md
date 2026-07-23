@@ -193,6 +193,14 @@ Seluruh baris di tabel ini **diverifikasi jalan** lewat `server/scripts/smoke.ps
 | `GET` | `/api/v1/users/{username}` | ✅ |
 | `POST` | `/api/v1/users/{username}/follow` | ✅ |
 | `DELETE` | `/api/v1/users/{username}/follow` | ✅ |
+| `GET` | `/api/v1/users/me` | ✅ |
+| `PATCH` | `/api/v1/users/me` | ✅ |
+| `GET` | `/api/v1/users/me/blocked` | ✅ |
+| `POST` | `/api/v1/users/{username}/block` | ✅ |
+| `DELETE` | `/api/v1/users/{username}/block` | ✅ |
+| `POST` | `/api/v1/devices` | ✅ |
+| `DELETE` | `/api/v1/devices/{id}` | ✅ |
+| `POST` | `/api/v1/reports` | ✅ |
 | `GET` | `/api/v1/users/me/following` | ✅ |
 | `GET` | `/api/v1/users/me/follow-requests` | ✅ |
 | `POST` | `/api/v1/users/{username}/follow/approve` | ✅ |
@@ -531,6 +539,94 @@ dibersihkan oleh job terpisah, juga setelah masa tenggang.
 
 Catatan tontonan (`story_views`) ikut dibuang: setelah story hilang, daftar
 penontonnya tidak berguna dan hanya menyimpan siapa melihat apa tanpa alasan.
+
+---
+
+## 6c. Profil sendiri, blokir, perangkat, laporan
+
+### `GET /api/v1/users/me`
+
+Profil pemilik akun — termasuk yang **tidak** terlihat orang lain: email,
+tanggal lahir, preferensi privasi.
+
+```json
+{ "data": {
+    "id": "6f77d0ad-...",
+    "username": "budi",
+    "email": "budi@syntra.app",
+    "display_name": "Budi Santoso",
+    "bio": "",
+    "avatar_url": "https://.../object/public/media/...",
+    "follower_count": 1,
+    "following_count": 0,
+    "is_private": false,
+    "date_of_birth": "1998-05-12",
+    "dm_privacy": "everyone",
+    "story_privacy": "followers",
+    "locale": "id"
+} }
+```
+
+Berbeda dari `GET /users/{username}` yang hanya data publik.
+
+### `PATCH /api/v1/users/me`
+
+Ubah profil. **Kirim hanya field yang berubah** — yang tidak disertakan tidak
+diubah.
+
+```json
+{ "display_name": "Budi S.", "bio": "halo", "is_private": true }
+```
+
+Field: `display_name` (≤60), `bio` (≤200), `avatar_media_id`, `is_private`,
+`dm_privacy` (`everyone`|`following`|`nobody`), `story_privacy`
+(`public`|`followers`|`close_friends`). Balasannya profil terbaru.
+
+### Blokir
+
+```
+POST   /api/v1/users/{username}/block     → 204
+DELETE /api/v1/users/{username}/block     → 204
+GET    /api/v1/users/me/blocked           daftar yang diblokir
+```
+
+Memblokir **memutus follow dua arah**: yang diblokir berhenti menerima story dan
+pembaruan dari yang memblokir, dan sebaliknya. Blokir juga menghalangi masuk
+voice room dan memulai chat.
+
+### Perangkat — untuk push notification (FCM)
+
+```
+POST   /api/v1/devices        daftarkan / perbarui push token
+DELETE /api/v1/devices/{id}   cabut (mis. saat logout)
+```
+
+```json
+{ "device_id": "uuid-perangkat", "platform": "android",
+  "push_token": "token-fcm", "app_version": "1.0.0" }
+```
+
+`platform`: `android` | `ios` | `web`. Satu push token hanya boleh dimiliki satu
+akun — kalau ponsel berpindah pengguna, pemilik lama otomatis berhenti menerima.
+
+> Backend baru **menyimpan** token; pengiriman push FCM-nya sendiri belum ada.
+
+### Laporan
+
+```
+POST /api/v1/reports          → 201
+```
+
+```json
+{ "target_type": "story", "target_id": "019f...", "reason": "spam",
+  "detail": "opsional" }
+```
+
+`target_type`: `user`|`reel`|`story`|`message`|`room`|`comment`.
+`reason`: `spam`|`harassment`|`nudity`|`violence`|`csam`|`copyright`|`other`.
+
+Laporan `csam` otomatis berprioritas kritis — kewajiban hukum dan SLA-nya
+berbeda total dari spam.
 
 ---
 

@@ -90,6 +90,7 @@ func New(ctx context.Context, cfg *config.Config, log *slog.Logger) (*App, error
 
 	accountRepo := repo.NewAccountRepository(supa)
 	notifRepo := repo.NewNotificationRepository(supa)
+	profileRepo := repo.NewProfileRepository(supa)
 	roomRepo := repo.NewRoomRepository(supa)
 	sfu := livekit.New(cfg.LiveKit.APIKey, cfg.LiveKit.APISecret, cfg.LiveKit.URL)
 	if !sfu.Configured() {
@@ -104,6 +105,7 @@ func New(ctx context.Context, cfg *config.Config, log *slog.Logger) (*App, error
 	presenceService := presence.NewService(presenceStore, cfg.WS.PresenceTTL)
 	roomService := room.NewService(roomRepo, sfu, ws.NewPublisher(hub))
 	notifService := notification.NewService(notifRepo, ws.NewPublisher(hub))
+	profileService := account.NewProfileService(profileRepo, profileRepo)
 
 	// --- transport: websocket ---
 	wsRouter := ws.NewRouter(log)
@@ -135,12 +137,13 @@ func New(ctx context.Context, cfg *config.Config, log *slog.Logger) (*App, error
 		Account: handler.NewAccount(
 			account.NewService(accountRepo, accountRepo),
 		),
-		Chat:  handler.NewChat(chatService),
-		Story: handler.NewStory(storyService, mediaService),
-		User:  handler.NewUser(userService, mediaService),
-		Media: handler.NewMedia(mediaService),
-		Room:  handler.NewRoom(roomService, mediaService),
-		Notif: handler.NewNotification(notifService, mediaService),
+		Chat:    handler.NewChat(chatService),
+		Story:   handler.NewStory(storyService, mediaService),
+		User:    handler.NewUser(userService, mediaService),
+		Media:   handler.NewMedia(mediaService),
+		Room:    handler.NewRoom(roomService, mediaService),
+		Notif:   handler.NewNotification(notifService, mediaService),
+		Profile: handler.NewProfile(profileService, mediaService),
 	})
 
 	server := &http.Server{
