@@ -12,7 +12,9 @@ dokumen ini yang harus diperbaiki.
 > rute di §3 *dan* bagian detail endpointnya. Aplikasi membangun kliennya dari
 > sini; endpoint yang tidak tercatat sama saja dengan tidak ada.
 >
-> Verifikasi dengan `server/scripts/smoke.ps1` sebelum menyatakan sesuatu jalan.
+> Verifikasi dengan dua skrip sebelum commit:
+> `server/scripts/check-docs.ps1` (dokumen vs kode) dan
+> `server/scripts/smoke.ps1` (endpoint benar-benar jalan).
 
 - Base URL lokal: `http://localhost:8081` (lewat nginx) atau `:8080` (langsung)
 - Semua path REST berawalan `/api/v1`
@@ -777,7 +779,19 @@ diganti dengan yang otoritatif dari server begitu `ack` tiba.
 | `typing` | anggota lain sedang mengetik |
 | `presence.update` | seseorang menjadi online/offline |
 | `room.message` | pesan baru di voice room yang sedang dilanggan |
+| `room.ended` | room ditutup (host keluar) — **tutup layar & putuskan LiveKit** |
+| `room.participants` | daftar peserta berubah — dikirim utuh, ganti daftar lokal |
+| `room.speak_request` | ada yang mengangkat tangan (untuk host & moderator) |
+| `room.role_changed` | peran seseorang berubah — lihat `needs_rejoin` |
 | `notification.new` | notifikasi baru untuk kamu (topik `user:<id>`) |
+
+Empat event `room.*` di atas disiarkan ke topik `room:<id>`. Bentuk payload dan
+alur lengkapnya ada di [`voice-rooms.md`](voice-rooms.md).
+
+Satu yang tidak boleh dilewat: **`room.role_changed` membawa `needs_rejoin`.**
+Kalau bernilai `true`, klien harus memanggil `POST /rooms/{id}/join` lagi untuk
+mendapat token SFU baru — token lama diterbitkan dengan `canPublish: false` dan
+tidak akan bisa menyalakan mikrofon meski tombolnya sudah muncul.
 
 Masuk dan keluar voice room dilakukan lewat **REST**, bukan frame — lihat
 [`voice-rooms.md`](voice-rooms.md).

@@ -330,6 +330,8 @@ Contoh: menambahkan reaksi pesan.
 6. **Dokumentasi** — perbarui [`../docs/api.md`](../docs/api.md): tabel
    ringkasan rute DAN bagian detail endpointnya. Ini wajib, bukan opsional —
    aplikasi membangun kliennya dari dokumen itu.
+7. **Verifikasi** — `powershell -File .\scripts\check-docs.ps1` akan gagal
+   kalau ada rute, frame, atau event yang belum tercatat di `api.md`.
 
 Kalau sebuah handler mulai berisi `if` yang menentukan siapa boleh melakukan
 apa, aturan itu salah tempat — pindahkan ke service.

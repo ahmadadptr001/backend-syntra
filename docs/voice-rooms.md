@@ -296,6 +296,55 @@ ke sana.
 
 **Kanal ini tidak membawa audio.** Suaranya lewat SFU.
 
+## 6b. Event room
+
+Selain chat, topik `room:<id>` membawa empat event keadaan.
+
+### `room.ended`
+
+```json
+{ "type": "room.ended", "data": { "room_id": "019f8e77-...", "reason": "host_left" } }
+```
+
+Tutup layar room dan putuskan koneksi LiveKit. Tanpa menangani ini, peserta
+tetap menampilkan layar room dan mengira masih terhubung — padahal room-nya
+sudah ditutup dan `join` berikutnya akan dibalas `404`.
+
+### `room.participants`
+
+```json
+{ "type": "room.participants", "data": {
+    "room_id": "019f8e77-...",
+    "participants": [ /* bentuknya sama dengan GET /rooms/{id}/participants */ ]
+} }
+```
+
+Dikirim **utuh**, bukan sebagai delta. Daftar room selalu kecil, dan pengiriman
+utuh membuat klien tidak bisa kehilangan sinkronisasi setelah satu frame
+terlewat. Ganti daftar lokal, jangan digabung.
+
+### `room.speak_request`
+
+```json
+{ "type": "room.speak_request", "data": { "room_id": "...", "user_id": "..." } }
+```
+
+Untuk host dan moderator: tampilkan notifikasi angkat tangan. Daftar lengkapnya
+di `GET /rooms/{id}/speak-requests`.
+
+### `room.role_changed`
+
+```json
+{ "type": "room.role_changed", "data": {
+    "room_id": "...", "user_id": "...", "role": "speaker", "needs_rejoin": true
+} }
+```
+
+**`needs_rejoin: true` berarti klien yang bersangkutan harus memanggil `join`
+lagi.** Token SFU lamanya diterbitkan dengan `canPublish: false`; tanpa token
+baru, mikrofonnya tetap tidak bisa menyala meski tombolnya sudah muncul. Ini
+penyebab keluhan "sudah jadi speaker tapi tetap tidak bisa bicara".
+
 ---
 
 ## 7. Batasan dan yang belum ada

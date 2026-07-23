@@ -81,7 +81,16 @@ ERD per domain, konvensi penamaan, dan yang sengaja tidak disimpan di Postgres.
    folder ini; dokumen yang tersebar membuat rujukan mudah basi.
 2. **Perubahan endpoint wajib ikut mengubah [`api.md`](api.md)** — tabel
    ringkasan rute dan bagian detailnya, di giliran yang sama.
-3. **Verifikasi sebelum menyatakan sesuatu jalan.** Jalankan
-   `server/scripts/smoke.ps1`; kalau ada yang gagal, tulis apa adanya.
+3. **Verifikasi sebelum menyatakan sesuatu jalan.** Dua skrip:
+
+   ```powershell
+   cd server
+   powershell -ExecutionPolicy Bypass -File .\scripts\check-docs.ps1   # docs vs kode
+   powershell -ExecutionPolicy Bypass -File .\scripts\smoke.ps1        # endpoint benar jalan
+   ```
+
+   `check-docs.ps1` menangkap rute, frame, dan event yang ada di kode tetapi
+   belum tercatat di `api.md` — dan sebaliknya, yang tercatat tetapi tidak ada
+   di kode. Jalankan sebelum commit.
 4. Kalau dokumen berbeda dengan kode, **kode yang benar** — dan itu bug di
    dokumennya.
