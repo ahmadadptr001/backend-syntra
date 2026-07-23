@@ -126,6 +126,14 @@ func (r *ProfileRepository) UpdateMyProfile(ctx context.Context, in account.Upda
 	}
 
 	if err := r.client.RPC(ctx, "update_my_profile", args, nil, actor); err != nil {
+		// Pelanggaran keunikan pada jalur ini hanya bisa berasal dari username —
+		// dipetakan di sini, bukan di translateProfile yang dipakai bersama RPC
+		// lain (create_report, register_device) yang tak boleh ikut membalas
+		// "username sudah dipakai".
+		var apiErr *sb.APIError
+		if errorsAs(err, &apiErr) && apiErr.Code == sqlstateUniqueViolation {
+			return account.ErrUsernameTaken
+		}
 		return translateProfile(err)
 	}
 	return nil
@@ -236,10 +244,6 @@ func translateProfile(err error) error {
 	}
 
 	switch {
-	case apiErr.Code == sqlstateUniqueViolation:
-		// Satu-satunya constraint unik yang bisa dilanggar lewat jalur ini
-		// adalah username; keluhan lain tidak sampai ke sini.
-		return account.ErrUsernameTaken
 	case apiErr.Code == sqlstateInvalidData:
 		return account.ErrInvalidInput
 	case apiErr.Code == sqlstateNotFound, apiErr.IsNotFound():

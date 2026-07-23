@@ -10,18 +10,10 @@
 
 BEGIN;
 
--- ============================================================
--- VALIDASI USERNAME
--- ============================================================
--- 3–30 karakter, huruf kecil/angka/titik/garis bawah, harus diawali huruf.
--- Dipisah jadi fungsi tersendiri supaya aturannya satu tempat.
-CREATE OR REPLACE FUNCTION public.is_valid_username(p_username text)
-RETURNS boolean
-LANGUAGE sql
-IMMUTABLE
-AS $$
-    SELECT p_username ~ '^[a-z][a-z0-9._]{2,29}$';
-$$;
+-- Catatan: format username TIDAK divalidasi ulang di SQL. Pendaftaran pun
+-- hanya memvalidasi di lapisan Go (account.validUsername), jadi menambah aturan
+-- SQL yang berbeda di sini justru berisiko menolak username lama yang sah.
+-- Keunikan tetap ditegakkan constraint citext pada users.username (23505).
 
 -- ============================================================
 -- get_my_profile — tambah cover_key
@@ -103,29 +95,29 @@ SET search_path = public
 AS $$
 DECLARE
     v_user     uuid := public.require_auth();
-    v_username text := NULLIF(btrim(lower(p_username)), '');
+    -- Trim saja, tanpa mengecilkan huruf — pendaftaran menyimpan apa adanya,
+    -- dan citext sudah menangani keunikan lintas-kapital.
+    v_username text := NULLIF(btrim(p_username), '');
 BEGIN
-    -- Avatar & cover harus milik pemanggil sendiri.
+    -- Avatar & cover harus milik pemanggil sendiri DAN berupa gambar — foto
+    -- profil/sampul bukan tempat menautkan video atau audio.
     IF p_avatar_media IS NOT NULL
        AND NOT EXISTS (SELECT 1 FROM media_assets ma
-                       WHERE ma.id = p_avatar_media AND ma.owner_id = v_user) THEN
-        RAISE EXCEPTION 'media bukan milik pengguna ini' USING ERRCODE = '42501';
+                       WHERE ma.id = p_avatar_media AND ma.owner_id = v_user AND ma.kind = 'image') THEN
+        RAISE EXCEPTION 'avatar harus gambar milik pengguna ini' USING ERRCODE = '42501';
     END IF;
 
     IF p_cover_media IS NOT NULL
        AND NOT EXISTS (SELECT 1 FROM media_assets ma
-                       WHERE ma.id = p_cover_media AND ma.owner_id = v_user) THEN
-        RAISE EXCEPTION 'media sampul bukan milik pengguna ini' USING ERRCODE = '42501';
+                       WHERE ma.id = p_cover_media AND ma.owner_id = v_user AND ma.kind = 'image') THEN
+        RAISE EXCEPTION 'sampul harus gambar milik pengguna ini' USING ERRCODE = '42501';
     END IF;
 
-    -- Ganti username hanya bila benar-benar berubah.
+    -- Ganti username hanya bila benar-benar berubah. Format sudah divalidasi
+    -- di lapisan Go (aturan sama dengan pendaftaran). Perbandingan citext
+    -- bersifat case-insensitive, jadi mengirim username sendiri dengan kapital
+    -- berbeda tidak dianggap perubahan dan tidak memicu pelanggaran keunikan.
     IF v_username IS NOT NULL THEN
-        IF NOT public.is_valid_username(v_username) THEN
-            RAISE EXCEPTION 'username tidak valid' USING ERRCODE = '22023';
-        END IF;
-        -- Tidak apa-apa kalau sama dengan milik sendiri; UPDATE di bawah
-        -- menyaringnya sehingga tidak memicu pelanggaran keunikan pada diri
-        -- sendiri. Keunikan lintas-pengguna ditegakkan constraint (23505).
         UPDATE users u
         SET username = v_username, updated_at = now()
         WHERE u.id = v_user AND u.username <> v_username;

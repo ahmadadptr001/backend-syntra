@@ -3,7 +3,6 @@ package account
 import (
 	"context"
 	"errors"
-	"regexp"
 	"strings"
 	"unicode/utf8"
 )
@@ -22,13 +21,7 @@ var (
 const (
 	MaxDisplayName = 60
 	MaxBio         = 200
-	MinUsername    = 3
-	MaxUsername    = 30
 )
-
-// usernamePattern menyamai aturan di SQL is_valid_username: diawali huruf
-// kecil, lalu huruf kecil/angka/titik/garis bawah, total 3–30 karakter.
-var usernamePattern = regexp.MustCompile(`^[a-z][a-z0-9._]{2,29}$`)
 
 // MyProfile adalah profil lengkap pemilik akun — termasuk yang tidak boleh
 // dilihat orang lain (email, preferensi privasi, tanggal lahir).
@@ -127,11 +120,14 @@ func (s *ProfileService) Update(ctx context.Context, in UpdateProfileInput) erro
 		return ErrBadPrivacy
 	}
 	if in.Username != nil {
-		// Normalisasi ke huruf kecil di sini juga, supaya validasi sisi server
-		// cocok dengan aturan citext & regex di SQL. Keunikan tetap ditegakkan
-		// database — di sini hanya bentuknya.
-		uname := strings.ToLower(strings.TrimSpace(*in.Username))
-		if !usernamePattern.MatchString(uname) {
+		// Aturan yang SAMA PERSIS dengan pendaftaran (validUsername): kalau
+		// lebih ketat, pengguna lama yang username-nya sah saat daftar tapi
+		// tak lolos aturan baru akan gagal menyimpan perubahan apa pun begitu
+		// layar Edit Profil ikut mengirim username yang tak berubah. Trim saja,
+		// tanpa mengecilkan huruf — pendaftaran pun menyimpan apa adanya, dan
+		// keunikan lintas-kapital sudah ditegakkan citext.
+		uname := strings.TrimSpace(*in.Username)
+		if !validUsername(uname) {
 			return ErrInvalidUsername
 		}
 		in.Username = &uname
