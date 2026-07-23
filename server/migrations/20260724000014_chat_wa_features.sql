@@ -506,8 +506,10 @@ END;
 $$;
 
 -- get_messages ikut mengembalikan lampiran (sebagai storage key CSV agar tetap
--- satu baris per pesan; klien memecahnya). Ditambah kolom baru tanpa mengubah
--- yang lama.
+-- satu baris per pesan; klien memecahnya). Kolom baru mengubah tipe kembalian,
+-- jadi fungsi lama harus di-DROP dulu — CREATE OR REPLACE tidak bisa mengubah
+-- bentuk baris keluaran (Postgres 42P13).
+DROP FUNCTION IF EXISTS public.get_messages(uuid, uuid, integer);
 CREATE OR REPLACE FUNCTION public.get_messages(
     p_conversation uuid,
     p_before       uuid,
