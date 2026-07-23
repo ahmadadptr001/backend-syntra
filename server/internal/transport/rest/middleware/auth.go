@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"errors"
 	"net/http"
 	"strings"
 
@@ -47,6 +48,14 @@ func Auth(verifier auth.Verifier, opts AuthOptions) Middleware {
 
 			principal, err := verifier.Verify(r.Context(), token)
 			if err != nil {
+				// Kesalahan konfigurasi server diteruskan apa adanya: ia
+				// menyebut kunci mana yang harus diubah, dan menyembunyikannya
+				// di balik pesan generik justru membuat penyebabnya kabur.
+				if errors.Is(err, auth.ErrDevBypassRejectsJWT) {
+					WithError(r, err)
+					httpx.Fail(w, r, http.StatusUnauthorized, httpx.CodeUnauthorized, err.Error())
+					return
+				}
 				httpx.Fail(w, r, http.StatusUnauthorized, httpx.CodeUnauthorized, "token tidak valid atau kedaluwarsa")
 				return
 			}

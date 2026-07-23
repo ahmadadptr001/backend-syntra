@@ -9,6 +9,12 @@
 # di dalamnya dirusak sebelum sampai ke curl, dan hasilnya 400 yang menyesatkan
 # seolah endpointnya bermasalah. Skrip ini memakai Invoke-RestMethod.
 
+param(
+    # Ikut menguji pendaftaran. Dilewati secara bawaan karena Supabase
+    # membatasi jumlah signup per jam.
+    [switch]$WithRegister
+)
+
 $ErrorActionPreference = 'Continue'
 $root = Split-Path $PSScriptRoot -Parent
 $base = if ($env:SYNTRA_BASE) { $env:SYNTRA_BASE } else { 'http://localhost:8081' }
@@ -36,7 +42,12 @@ $script:pass = 0
 $script:fail = 0
 $script:hdr  = @{}
 
-function Test-Endpoint($label, $method, $url, $body) {
+# Test-Endpoint menerima status yang diharapkan.
+#
+# `expect` ada karena sebagian endpoint memang seharusnya menolak: refresh token
+# palsu wajib 401. Tanpa parameter ini, penolakan yang benar akan terhitung
+# sebagai kegagalan dan laporan uji jadi berbohong ke arah sebaliknya.
+function Test-Endpoint($label, $method, $url, $body, $expect = 0) {
     try {
         if ($null -ne $body) {
             $null = Invoke-RestMethod -Uri $url -Method $method -Headers $script:hdr `
@@ -44,16 +55,28 @@ function Test-Endpoint($label, $method, $url, $body) {
         } else {
             $null = Invoke-RestMethod -Uri $url -Method $method -Headers $script:hdr -ErrorAction Stop
         }
+
+        if ($expect -ne 0) {
+            $script:fail++
+            Write-Host ("  FAIL  " + $label + "  -> berhasil, padahal seharusnya $expect") -ForegroundColor Red
+            return
+        }
         $script:pass++
         Write-Host ("  OK    " + $label) -ForegroundColor Green
     } catch {
-        $script:fail++
         $code = $_.Exception.Response.StatusCode.value__
         $msg = ''
         try {
             $sr = New-Object IO.StreamReader($_.Exception.Response.GetResponseStream())
             $msg = ($sr.ReadToEnd() | ConvertFrom-Json).error.message
         } catch {}
+
+        if ($expect -ne 0 -and $code -eq $expect) {
+            $script:pass++
+            Write-Host ("  OK    " + $label + "  (menolak dengan benar: $code)") -ForegroundColor Green
+            return
+        }
+        $script:fail++
         Write-Host ("  FAIL  " + $label + "  -> " + $code + " " + $msg) -ForegroundColor Red
     }
 }
@@ -64,12 +87,21 @@ Test-Endpoint "GET  /healthz" GET "$base/healthz" $null
 Test-Endpoint "GET  /readyz"  GET "$base/readyz"  $null
 
 $rnd = Get-Random -Maximum 99999
-Test-Endpoint "POST /auth/register" POST "$api/auth/register" `
-    @{ email = "smoke$rnd@syntra.app"; password = 'rahasia123'; username = "smoke$rnd" }
+
+# Pendaftaran dilewati secara bawaan: Supabase membatasi jumlah signup per jam
+# (free tier tanpa SMTP kustom), jadi menjalankannya berulang kali justru
+# membuat uji ini gagal karena 429 — bukan karena endpointnya rusak.
+# Jalankan dengan -WithRegister untuk ikut mengujinya.
+if ($WithRegister) {
+    Test-Endpoint "POST /auth/register" POST "$api/auth/register" `
+        @{ email = "smoke$rnd@syntra.app"; password = 'rahasia123'; username = "smoke$rnd" }
+} else {
+    Write-Host "  SKIP  POST /auth/register  (pakai -WithRegister; Supabase membatasi signup per jam)" -ForegroundColor Yellow
+}
 Test-Endpoint "POST /auth/login" POST "$api/auth/login" `
     @{ email = 'budi@syntra.app'; password = 'budi123456' }
-Test-Endpoint "POST /auth/refresh (harus gagal)" POST "$api/auth/refresh" `
-    @{ refresh_token = 'sengaja-salah' }
+Test-Endpoint "POST /auth/refresh (token palsu ditolak)" POST "$api/auth/refresh" `
+    @{ refresh_token = 'sengaja-salah' } 401
 
 # --- terproteksi ---
 $jwt = Get-Jwt 'budi@syntra.app' 'budi123456'
@@ -111,6 +143,12 @@ Test-Endpoint "POST /rooms/{id}/join" POST "$api/rooms/$room/join" $null
 Test-Endpoint "GET  /rooms/{id}/participants" GET "$api/rooms/$room/participants" $null
 Test-Endpoint "PATCH /rooms/{id}/mute" PATCH "$api/rooms/$room/mute" @{ muted = $true }
 Test-Endpoint "POST /rooms/{id}/raise-hand" POST "$api/rooms/$room/raise-hand" $null
+
+# Citra harus benar-benar bergabung dulu sebelum bisa dinaikkan perannya —
+# set_room_role menolak target yang bukan peserta aktif, dan itu memang benar.
+$jwtCitra = Get-Jwt 'citra@syntra.app' 'citra123456'
+$null = Invoke-RestMethod "$api/rooms/$room/join" -Method Post -Headers @{ Authorization = "Bearer $jwtCitra" }
+
 Test-Endpoint "PATCH /rooms/{id}/participants" PATCH "$api/rooms/$room/participants" `
     @{ user_id = $citra; role = 'speaker' }
 Test-Endpoint "POST /rooms/{id}/leave" POST "$api/rooms/$room/leave" $null

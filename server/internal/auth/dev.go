@@ -25,10 +25,40 @@ func (DevVerifier) Verify(_ context.Context, token string) (Principal, error) {
 	if token == "" {
 		return Principal{}, ErrNoToken
 	}
+
+	// Menolak JWT sungguhan, dan ini bukan kehati-hatian berlebihan.
+	//
+	// Kalau klien mengirim JWT Supabase yang sah sementara bypass menyala,
+	// UserID akan berisi seluruh string JWT alih-alih UUID. Akibatnya
+	// beruntun dan sulit dilacak: langganan WebSocket menjadi
+	// "user:eyJhbGciOi…" lalu ditolak Postgres dengan "invalid input syntax
+	// for type uuid", sementara pesan errornya tidak menyebut token sama
+	// sekali. Persis itu yang sempat terjadi.
+	//
+	// Menolaknya di sini mengubah kegagalan senyap menjadi pesan yang
+	// langsung menunjuk penyebabnya.
+	if looksLikeJWT(token) {
+		return Principal{}, ErrDevBypassRejectsJWT
+	}
+
 	return Principal{
 		UserID:   token,
 		DeviceID: "dev-device",
 		Scopes:   []string{"chat:read", "chat:write"},
 		Token:    token,
 	}, nil
+}
+
+// looksLikeJWT mengenali tiga segmen base64url yang dipisah titik.
+func looksLikeJWT(token string) bool {
+	parts := strings.Split(token, ".")
+	if len(parts) != 3 {
+		return false
+	}
+	for _, p := range parts {
+		if p == "" {
+			return false
+		}
+	}
+	return strings.HasPrefix(token, "eyJ") // header JSON ter-base64
 }

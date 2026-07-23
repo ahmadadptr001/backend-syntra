@@ -98,6 +98,110 @@ Follow / Requested / Following.
 > menyetujuinya**. Untuk sementara pakai akun publik — kalau tidak, permintaan
 > follow menggantung dan story tetap tidak muncul.
 
+---
+
+## Temuan dari log — hal yang perlu diperbaiki di aplikasi
+
+Ditulis 2026-07-23 setelah membaca log backend saat aplikasi mencoba tersambung
+dari perangkat `192.168.1.2` (okhttp/4.12.0).
+
+### 1. Pesan tampil dua kali di layar pengirim — perlu dedup
+
+**Gejala:** pengirim melihat pesannya dua kali, penerima hanya satu.
+
+**Penyebab:** ini perilaku backend yang disengaja, bukan bug. Saat mengirim
+lewat WebSocket, pengirim menerima **dua** frame:
+
+1. `ack` — berisi `id` dan `created_at` final dari server
+2. `message.new` — siaran ke seluruh pelanggan topik percakapan, **termasuk
+   pengirim sendiri**
+
+Siaran itu tidak bisa dilewatkan begitu saja: perangkat lain milik pengirim —
+tablet, atau ponsel kedua — memang harus ikut menerimanya. Yang dikecualikan
+seharusnya satu koneksi, bukan satu pengguna.
+
+**Perbaikan di aplikasi:** kunci daftar pesan dengan `id`, bukan menambah
+membabi buta.
+
+```kotlin
+// saat mengirim: tampilkan optimistik dengan id sementara
+val tempId = "local-${System.currentTimeMillis()}"
+messages.add(Message(id = tempId, body = text, pending = true))
+ws.send("""{"type":"message.send","ref":"$tempId","data":{...}}""")
+
+// saat "ack" tiba: GANTI yang sementara, jangan tambah
+onAck { ref, data ->
+    val i = messages.indexOfFirst { it.id == ref }
+    if (i >= 0) messages[i] = messages[i].copy(id = data.id, pending = false)
+}
+
+// saat "message.new" tiba: abaikan kalau id-nya sudah ada
+onMessageNew { msg ->
+    if (messages.none { it.id == msg.id }) messages.add(msg)
+}
+```
+
+Pemeriksaan `none { it.id == msg.id }` itu yang menghilangkan duplikatnya.
+Sekaligus membuat aplikasi tahan terhadap frame yang terkirim ulang saat
+jaringan tidak stabil.
+
+### 2. `POST /auth/login` balas 401 tiga kali berturut-turut
+
+Log menunjukkan tiga percobaan gagal dari perangkat yang sama dalam 25 detik.
+Backend menolak dengan benar — kredensialnya memang tidak cocok.
+
+Yang perlu diperiksa di aplikasi:
+
+- Email/kata sandi yang dikirim benar. Akun uji ada di tabel bawah.
+- **Body dikirim sebagai JSON**, bukan form-encoded:
+  `Content-Type: application/json` dengan isi `{"email":"...","password":"..."}`
+- Kalau memakai `@FormUrlEncoded` di Retrofit, backend akan gagal mem-parsenya.
+
+Pesan `401` sengaja tidak membedakan "email tidak terdaftar" dari "kata sandi
+salah" — membedakannya berarti memberi tahu penyerang akun mana yang ada.
+
+### 3. `POST /auth/register` balas 429 dua kali
+
+Bukan kesalahan aplikasi maupun backend. **Supabase membatasi jumlah
+pendaftaran per jam** pada proyek free tier tanpa SMTP kustom.
+
+Yang perlu ditangani di aplikasi: tampilkan pesan "coba lagi beberapa saat",
+bukan "terjadi kesalahan". Kode errornya `rate_limited`, bukan `internal` —
+jadi bisa dibedakan.
+
+Jangan mengulang otomatis dengan cepat; itu justru memperpanjang masa blokir.
+
+### 4. Kesalahan konfigurasi backend yang sempat menyesatkan
+
+Dua gejala berikut **sudah diperbaiki di backend**, tetapi disebutkan agar
+tidak salah didiagnosis kalau muncul lagi:
+
+| Gejala | Penyebab | Status |
+|---|---|---|
+| `invalid input syntax for type uuid` saat `subscribe` | `AUTH_DEV_BYPASS=true` membuat `user_id` berisi seluruh JWT | ✅ bypass dimatikan; `DevVerifier` kini menolak JWT dengan pesan jelas |
+| `participant identity length exceeds limits: max length 256` saat join room | akar yang sama — identity LiveKit berisi JWT, bukan UUID | ✅ ikut sembuh; ditambah pemeriksaan panjang di penerbit token |
+
+Kalau salah satu muncul lagi, periksa `AUTH_DEV_BYPASS` di `.env` server lebih
+dulu — bukan kode aplikasi.
+
+### 5. Alamat backend berubah saat ganti Wi-Fi
+
+Base URL menunjuk alamat laptop di jaringan lokal, jadi ia **berubah setiap
+kali laptop pindah Wi-Fi**.
+
+```
+sebelumnya : http://192.168.1.174:8081
+sekarang   : http://192.168.1.6:8081
+```
+
+Simpan di `local.properties` lalu baca lewat `BuildConfig`, supaya cukup ganti
+satu baris tanpa menyentuh kode.
+
+Cara yang lebih tahan lama: pakai alamat Tailscale **`100.77.80.61`** — tidak
+pernah berubah meski pindah jaringan, asalkan ponsel juga login Tailscale.
+
+---
+
 ### Akun uji yang sudah tersedia
 
 | Email | Password | Username |

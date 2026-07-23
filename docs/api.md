@@ -40,20 +40,85 @@ gejala "kodenya benar tapi datanya kosong".
 | `?token=<jwt>` | **hanya** `/api/v1/ws`, karena WebSocket API di browser tidak bisa menyetel header |
 | `X-Debug-User: <user-id>` | hanya kalau `AUTH_DEV_BYPASS=true` dan `APP_ENV` bukan production |
 
-### Login dan memperoleh JWT
+### Endpoint auth
 
-Klien login langsung ke Supabase, bukan ke backend ini:
+**Pakai endpoint backend ini, jangan memanggil Supabase langsung.** Alasannya
+bukan kerapian: Supabase Auth hanya membuat baris di `auth.users`, sedangkan
+tabel aplikasi (`users`, `user_profiles`, `user_settings`) tidak ikut terisi.
+Akun hasil pendaftaran langsung ke Supabase **bisa login tetapi tidak punya
+profil** — setiap query mengembalikan kosong tanpa pesan yang menjelaskan.
 
-```http
-POST https://<project-ref>.supabase.co/auth/v1/token?grant_type=password
-apikey: <ANON_KEY>
-Content-Type: application/json
+Ini bukan kemungkinan teoretis; sempat terjadi 4 baris `auth.users` berbanding
+3 `public.users` di proyek ini.
 
-{"email":"admin@syntra.app","password":"admin123"}
+#### `POST /api/v1/auth/register`
+
+```json
+{
+  "email": "budi@syntra.app",
+  "password": "rahasia123",
+  "username": "budi",
+  "display_name": "Budi Santoso",
+  "date_of_birth": "1998-05-12"
+}
 ```
 
-Balasannya berisi `access_token` (berlaku 1 jam) dan `refresh_token`. Di
-Android, ini ditangani Supabase Kotlin SDK — termasuk refresh otomatis.
+Hanya `email` dan `password` yang wajib. Username kosong akan diturunkan dari
+email, dan bentrok diselesaikan dengan sufiks angka — pendaftaran tidak pernah
+gagal karena nama sudah dipakai.
+
+Balasan `201` berisi sesi yang langsung bisa dipakai (lihat bentuk di bawah).
+
+Kegagalan: `409` email sudah terdaftar · `400` kata sandi kurang dari 6
+karakter atau email tidak valid · **`429` batas pendaftaran Supabase** — free
+tier tanpa SMTP kustom hanya mengizinkan beberapa signup per jam.
+
+#### `POST /api/v1/auth/login`
+
+```json
+{ "email": "budi@syntra.app", "password": "budi123456" }
+```
+
+```json
+{ "data": {
+    "access_token": "eyJhbGciOi...",
+    "refresh_token": "dxh2wralne4u",
+    "token_type": "bearer",
+    "expires_in": 3600,
+    "user_id": "6f77d0ad-...",
+    "email": "budi@syntra.app",
+    "username": "budi",
+    "display_name": "Budi Santoso"
+} }
+```
+
+Login juga menjadi jaring pengaman: kalau akun ternyata belum punya profil, ia
+dibuat di sini.
+
+Kegagalan: `401` email atau kata sandi salah. Pesan sengaja tidak membedakan
+keduanya — memberi tahu mana yang salah berarti memberi tahu penyerang akun
+mana yang benar-benar ada.
+
+#### `POST /api/v1/auth/refresh`
+
+```json
+{ "refresh_token": "dxh2wralne4u" }
+```
+
+Access token berumur **1 jam**. Panggil endpoint ini saat menerima `401`, lalu
+ulangi permintaan yang gagal. `401` di sini berarti pengguna harus login ulang.
+
+#### `POST /api/v1/auth/logout`
+
+Butuh `Authorization: Bearer <token>`. Balasan `204`, dan tetap `204` meski
+token sudah kedaluwarsa — dari sudut pandang pengguna, "keluar" tidak boleh
+bisa gagal.
+
+#### `pending_confirmation`
+
+Kalau proyek Supabase mewajibkan konfirmasi email, `register` membalas dengan
+`access_token` kosong dan `pending_confirmation: true`. Akunnya sudah dibuat;
+arahkan pengguna ke kotak masuknya, dan profil akan terbentuk saat login pertama.
 
 ---
 
@@ -93,10 +158,17 @@ penerjemah error untuk kedua transport.
 
 ## 3. Ringkasan seluruh rute
 
+Seluruh baris di tabel ini **diverifikasi jalan** lewat
+`server/scripts/smoke.ps1` — 24 lulus, 0 gagal.
+
 | Method | Path | Auth |
 |---|---|---|
 | `GET` | `/healthz` | — |
 | `GET` | `/readyz` | — |
+| `POST` | `/api/v1/auth/register` | — |
+| `POST` | `/api/v1/auth/login` | — |
+| `POST` | `/api/v1/auth/refresh` | — |
+| `POST` | `/api/v1/auth/logout` | ✅ |
 | `GET` | `/api/v1/conversations` | ✅ |
 | `POST` | `/api/v1/conversations` | ✅ |
 | `GET` | `/api/v1/conversations/{id}/messages` | ✅ |
@@ -615,6 +687,12 @@ Tiga hal yang terlihat di sini:
 **Ack membawa `id` dan `created_at` final** — klien mengganti pesan optimistik
 di layar tanpa menunggu `message.new`.
 
+**Pengirim menerima DUA frame: `ack` dan `message.new`.** Siaran itu tidak
+dikecualikan untuk pengirim, karena perangkat lain miliknya memang harus ikut
+menerimanya. Klien wajib **dedup berdasarkan `id`** — abaikan `message.new`
+yang id-nya sudah ada di daftar. Tanpa itu, pesan tampil dua kali di layar
+pengirim; gejala yang sudah pernah muncul.
+
 **Siaran gagal tidak membatalkan pesan.** Pesannya sudah durabel. Mengembalikan
 error justru membuat pengirim mengira gagal lalu mengirim ulang — duplikat,
 bukan perbaikan.
@@ -625,7 +703,7 @@ lewat `GET .../messages` saat reconnect, bukan dengan mengandalkan pub/sub.
 ### Urutan yang disarankan saat aplikasi dibuka
 
 ```
-1. Supabase SDK: login / pulihkan sesi        → JWT
+1. POST /api/v1/auth/login                    → access_token + refresh_token
 2. GET  /api/v1/conversations                 → isi layar utama
 3. GET  /api/v1/stories                       → isi story row
 4. WS   connect                               → tunggu frame "ready"
@@ -633,7 +711,25 @@ lewat `GET .../messages` saat reconnect, bukan dengan mengandalkan pub/sub.
 6. WS   presence.query dengan seluruh counterpart_id
 7. Saat chat dibuka: GET .../messages
 8. Saat reconnect: ulangi langkah 5–7
+9. Saat menerima 401: POST /auth/refresh, lalu ulangi permintaan yang gagal
 ```
+
+## 10b. Menguji sendiri
+
+Seluruh endpoint di dokumen ini bisa diverifikasi sekaligus:
+
+```powershell
+cd server
+powershell -ExecutionPolicy Bypass -File .\scripts\smoke.ps1
+```
+
+Tambahkan `-WithRegister` untuk ikut menguji pendaftaran — dilewati secara
+bawaan karena Supabase membatasi jumlah signup per jam.
+
+> Jangan menguji dengan `curl.exe -d '{"a":"b"}'` di PowerShell. Tanda kutip di
+> dalamnya dirusak sebelum sampai ke curl, dan hasilnya `400 body bukan JSON
+> yang valid` — menyesatkan, seolah endpointnya bermasalah. Pakai
+> `Invoke-RestMethod`, atau simpan body ke berkas lalu `--data-binary "@file"`.
 
 ---
 

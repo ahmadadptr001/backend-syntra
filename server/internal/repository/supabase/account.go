@@ -157,6 +157,11 @@ func translateGoTrue(status int, raw []byte) error {
 	text := strings.ToLower(e.text())
 
 	switch {
+	case status == http.StatusTooManyRequests,
+		strings.Contains(text, "rate limit"),
+		strings.Contains(text, "too many"):
+		return account.ErrRateLimited
+
 	case strings.Contains(text, "already registered"),
 		strings.Contains(text, "already been registered"),
 		e.ErrorCode == "user_already_exists":

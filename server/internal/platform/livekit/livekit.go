@@ -30,6 +30,9 @@ import (
 // meminta token baru setiap kali bergabung, jadi ini tidak merepotkan.
 const TokenTTL = 6 * time.Hour
 
+// maxIdentityLength adalah batas yang ditegakkan LiveKit di sisi server.
+const maxIdentityLength = 256
+
 // Issuer menerbitkan token LiveKit.
 type Issuer struct {
 	apiKey    string
@@ -84,6 +87,20 @@ func (i *Issuer) Issue(roomID, userID, identity string, canPublish bool) (string
 	}
 	if roomID == "" || userID == "" {
 		return "", "", errors.New("livekit: roomID dan userID wajib diisi")
+	}
+
+	// LiveKit menolak identity di atas 256 karakter, dan pesannya
+	// ("participant identity length exceeds limits") tidak menyebut dari mana
+	// nilai itu berasal. Gejala itu pernah muncul karena UserID sempat berisi
+	// seluruh JWT — lihat auth.ErrDevBypassRejectsJWT. Pemeriksaan di sini
+	// menggagalkannya lebih awal dengan pesan yang menunjuk penyebabnya.
+	if len(userID) > maxIdentityLength {
+		return "", "", fmt.Errorf(
+			"livekit: userID terlalu panjang (%d karakter) — seharusnya UUID; "+
+				"periksa AUTH_DEV_BYPASS di .env", len(userID))
+	}
+	if len(identity) > maxIdentityLength {
+		identity = identity[:maxIdentityLength]
 	}
 
 	now := time.Now()

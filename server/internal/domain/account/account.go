@@ -28,6 +28,12 @@ var (
 	ErrEmailTaken     = errors.New("account: email sudah terdaftar")
 	ErrBadCredentials = errors.New("account: email atau kata sandi salah")
 	ErrBadRefresh     = errors.New("account: refresh token tidak valid")
+
+	// ErrRateLimited datang dari Supabase, bukan dari batas kita sendiri.
+	// Proyek free tier tanpa SMTP kustom hanya mengizinkan beberapa pendaftaran
+	// per jam. Dibedakan supaya klien menampilkan "coba lagi nanti", bukan
+	// "kesalahan internal" yang membuat pengguna mengira aplikasinya rusak.
+	ErrRateLimited = errors.New("account: terlalu banyak percobaan, coba lagi nanti")
 )
 
 // Batas yang ditegakkan sebelum permintaan diteruskan ke Supabase.

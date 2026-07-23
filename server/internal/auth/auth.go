@@ -15,6 +15,13 @@ import (
 var (
 	ErrNoToken      = errors.New("auth: token tidak disertakan")
 	ErrInvalidToken = errors.New("auth: token tidak valid atau kedaluwarsa")
+
+	// ErrDevBypassRejectsJWT muncul ketika klien mengirim JWT sungguhan
+	// sementara AUTH_DEV_BYPASS masih menyala. Kombinasi itu tidak pernah
+	// benar: bypass memperlakukan token sebagai id pengguna apa adanya,
+	// sehingga JWT menghasilkan UserID yang rusak.
+	ErrDevBypassRejectsJWT = errors.New(
+		"auth: AUTH_DEV_BYPASS masih true padahal klien mengirim JWT Supabase — setel AUTH_DEV_BYPASS=false di .env")
 )
 
 // Principal adalah identitas yang sudah terverifikasi.

@@ -196,6 +196,10 @@ func writeAccountError(w http.ResponseWriter, r *http.Request, err error) {
 		httpx.Fail(w, r, http.StatusUnauthorized, httpx.CodeUnauthorized,
 			"refresh token tidak valid, pengguna harus login ulang")
 
+	case errors.Is(err, account.ErrRateLimited):
+		httpx.Fail(w, r, http.StatusTooManyRequests, httpx.CodeRateLimited,
+			"terlalu banyak percobaan, coba lagi beberapa saat")
+
 	case errors.Is(err, account.ErrWeakPassword):
 		httpx.Fail(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "kata sandi minimal 6 karakter")
 
