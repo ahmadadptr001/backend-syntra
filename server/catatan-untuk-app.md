@@ -184,7 +184,81 @@ tidak salah didiagnosis kalau muncul lagi:
 Kalau salah satu muncul lagi, periksa `AUTH_DEV_BYPASS` di `.env` server lebih
 dulu — bukan kode aplikasi.
 
-### 5. Alamat backend berubah saat ganti Wi-Fi
+### 5. Sepuluh laporan pengujian voice room & story — hasil pemilahan
+
+Dari 10 laporan, **5 murni backend** (sudah diperbaiki), **4 murni aplikasi**,
+**1 gabungan**.
+
+#### ✅ Sudah diperbaiki di backend
+
+| # | Laporan | Penyebab |
+|---|---|---|
+| 1a | Peserta masuk tanpa izin pemilik | `invite_only` diperlakukan sama dengan `public`. Kini ditegakkan lewat tabel `room_invites` + `POST /rooms/{id}/invite` |
+| 1b | Room hantu masih ada | Host yang keluar tanpa memanggil `leave` (aplikasi tertutup, baterai habis) meninggalkan room `live` selamanya. Kini ada pembersih otomatis tiap 5 menit, dan data lama sudah dirapikan |
+| 2b | Angkat tangan tidak muncul di sisi host | Permintaan tersimpan tetapi **tidak ada endpoint untuk membacanya** — UI host mustahil dibuat. Kini ada `GET /rooms/{id}/speak-requests` + siaran `room.speak_request` |
+| 6 | Room terhapus tapi peserta masih bisa akses | `leave_room` hanya mengeluarkan si pemanggil; peserta lain tetap tercatat aktif. Kini seluruh peserta ikut dikeluarkan, dan `join` ke room `ended` ditolak `404` |
+| 9 | Foto profil peserta tidak bisa ditampilkan | Backend mengirim `avatar_media_id`, dan klien tidak punya cara mengubah id jadi URL. Kini mengirim `avatar_url` siap pakai |
+| 10a | Story orang lain tidak muncul | `list_stories` hanya menampilkan story dari yang **diikuti**, sementara data menunjukkan 0 baris follow. Kini juga menampilkan story dari **lawan bicara** — orang yang sudah berbagi percakapan |
+
+Endpoint & event baru:
+
+```
+GET  /api/v1/rooms/{id}/speak-requests    daftar yang mengangkat tangan
+POST /api/v1/rooms/{id}/invite            undang ke room invite_only
+```
+
+Event WebSocket baru di topik `room:<id>`:
+
+| Event | Kapan | Yang harus dilakukan aplikasi |
+|---|---|---|
+| `room.ended` | host keluar / room ditutup | tutup layar room, putuskan LiveKit, tampilkan pesan |
+| `room.participants` | ada perubahan peserta | ganti daftar peserta dengan isi payload |
+| `room.speak_request` | seseorang angkat tangan | tampilkan notifikasi di UI host |
+| `room.role_changed` | peran berubah | kalau `needs_rejoin: true`, **panggil `join` lagi** |
+
+`room.role_changed` membawa `needs_rejoin`. Ini penting: token SFU lama
+diterbitkan dengan `canPublish: false`, jadi peserta yang baru dipromosikan
+**tidak akan bisa menyalakan mikrofon** sampai ia mengambil token baru — meski
+tombolnya sudah muncul. Itu penyebab keluhan "lawan bicara tidak dapat
+berbicara" pada laporan #2.
+
+#### ⚠️ Perlu dikerjakan di aplikasi
+
+| # | Laporan | Kenapa ini sisi aplikasi |
+|---|---|---|
+| 2a | "Kamu belum menjadi speaker" | Backend **benar** menolak: pendengar memang tidak boleh menyalakan mikrofon. Setelah host menyetujui, aplikasi harus memanggil `join` lagi untuk token baru |
+| 3 | Ikon mikrofon kurang jelas | Murni tampilan. Status `is_muted` per peserta sudah dikirim backend |
+| 4 | Speaker kurang nyaring, perlu kontrol volume | Volume diatur SDK LiveKit di perangkat, tidak melewati backend sama sekali |
+| 5 | Perlu popup peringatan saat pemilik keluar | Murni tampilan. Backend tidak tahu dan tidak perlu tahu soal dialog |
+| 7 | Room baru harus refresh dulu | `POST /rooms` **sudah mengembalikan data room lengkap**. Sisipkan langsung ke daftar, jangan menunggu muat ulang |
+| 10b | Bar story abu-abu setelah ditonton | `viewed` per story dan `all_viewed` per orang sudah dikirim sejak awal |
+
+#### 🔀 Gabungan
+
+**#8 — pembuat room langsung masuk dengan mikrofon menyala.**
+
+Sisi backend sudah dibereskan: `POST /rooms` kini **langsung memasukkan
+pembuatnya sebagai host** dan mengembalikan token SFU dalam field `join`:
+
+```json
+{ "data": {
+    "id": "...", "title": "...", "participant_count": 1,
+    "join": {
+      "role": "host", "can_publish": true,
+      "sfu_url": "wss://...", "sfu_token": "eyJ..."
+    }
+} }
+```
+
+Aplikasi tidak perlu memanggil `/join` lagi — cukup `room.connect(sfu_url,
+sfu_token)` lalu `setMicrophoneEnabled(true)`.
+
+Soal "card paling top": `GET /rooms` sudah mengurutkan terbaru dulu, jadi room
+yang baru dibuat memang berada di posisi teratas.
+
+---
+
+### 6. Alamat backend berubah saat ganti Wi-Fi
 
 Base URL menunjuk alamat laptop di jaringan lokal, jadi ia **berubah setiap
 kali laptop pindah Wi-Fi**.

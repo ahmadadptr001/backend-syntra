@@ -135,14 +135,26 @@ Test-Endpoint "POST /media/upload-url" POST "$api/media/upload-url" `
 
 Write-Host "`n--- VOICE ROOM ---"
 Test-Endpoint "GET  /rooms" GET "$api/rooms" $null
-$room = (Invoke-RestMethod "$api/rooms" -Method Post -Headers $script:hdr `
-    -ContentType 'application/json' -Body (@{ title = "Room Uji $rnd" } | ConvertTo-Json)).data.id
-Write-Host "  OK    POST /rooms" -ForegroundColor Green
-$script:pass++
+$createdRoom = (Invoke-RestMethod "$api/rooms" -Method Post -Headers $script:hdr `
+    -ContentType 'application/json' -Body (@{ title = "Room Uji $rnd" } | ConvertTo-Json)).data
+$room = $createdRoom.id
+
+# Create harus langsung mengembalikan token SFU untuk hostnya, supaya klien
+# tidak perlu memanggil /join lagi hanya untuk tersambung ke audio sendiri.
+if ($createdRoom.join.role -eq 'host' -and $createdRoom.join.can_publish) {
+    Write-Host "  OK    POST /rooms (host langsung join, can_publish=true)" -ForegroundColor Green
+    $script:pass++
+} else {
+    Write-Host "  FAIL  POST /rooms  -> host tidak langsung tersambung" -ForegroundColor Red
+    $script:fail++
+}
+
 Test-Endpoint "POST /rooms/{id}/join" POST "$api/rooms/$room/join" $null
 Test-Endpoint "GET  /rooms/{id}/participants" GET "$api/rooms/$room/participants" $null
 Test-Endpoint "PATCH /rooms/{id}/mute" PATCH "$api/rooms/$room/mute" @{ muted = $true }
 Test-Endpoint "POST /rooms/{id}/raise-hand" POST "$api/rooms/$room/raise-hand" $null
+Test-Endpoint "GET  /rooms/{id}/speak-requests" GET "$api/rooms/$room/speak-requests" $null
+Test-Endpoint "POST /rooms/{id}/invite" POST "$api/rooms/$room/invite" @{ user_id = $citra }
 
 # Citra harus benar-benar bergabung dulu sebelum bisa dinaikkan perannya —
 # set_room_role menolak target yang bukan peserta aktif, dan itu memang benar.

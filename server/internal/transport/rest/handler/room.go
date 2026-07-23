@@ -15,24 +15,28 @@ import (
 // RoomService adalah bagian domain room yang dipakai handler REST.
 type RoomService interface {
 	Create(ctx context.Context, in room.CreateInput) (room.Room, error)
+	CreateAndJoin(ctx context.Context, in room.CreateInput, identity string) (room.Room, room.Join, error)
 	List(ctx context.Context) ([]room.Room, error)
 	Join(ctx context.Context, roomID, userID, identity string) (room.Join, error)
 	Leave(ctx context.Context, roomID string) error
 	Participants(ctx context.Context, roomID string) ([]room.Participant, error)
+	SpeakRequests(ctx context.Context, roomID string) ([]room.SpeakRequest, error)
 	SetRole(ctx context.Context, roomID, targetID string, role room.Role) error
-	RequestSpeak(ctx context.Context, roomID string) error
+	RequestSpeak(ctx context.Context, roomID, userID string) error
 	SetMuted(ctx context.Context, roomID string, muted bool) error
+	Invite(ctx context.Context, roomID, userID string) error
 	SFUReady() bool
 }
 
 // Room menangani endpoint voice room.
 type Room struct {
-	svc RoomService
+	svc   RoomService
+	media MediaURLResolver
 }
 
 // NewRoom membuat handler voice room.
-func NewRoom(svc RoomService) *Room {
-	return &Room{svc: svc}
+func NewRoom(svc RoomService, media MediaURLResolver) *Room {
+	return &Room{svc: svc, media: media}
 }
 
 type roomDTO struct {
@@ -97,7 +101,20 @@ type createRoomRequest struct {
 	Visibility string `json:"visibility,omitempty"`
 }
 
+type createdRoomDTO struct {
+	roomDTO
+
+	// Join disertakan supaya pembuat room langsung tersambung ke audio tanpa
+	// perlu memanggil /join secara terpisah. Tanpa ini ada jeda saat room
+	// sudah muncul di daftar orang lain sementara pembuatnya belum terhubung.
+	Join joinDTO `json:"join"`
+}
+
 // Create menangani POST /api/v1/rooms.
+//
+// Membuat room DAN langsung memasukkan pembuatnya sebagai host yang tidak
+// dibisukan, lengkap dengan token SFU. Balasannya berisi seluruh data room,
+// jadi klien bisa menampilkannya seketika tanpa memuat ulang daftar.
 func (h *Room) Create(w http.ResponseWriter, r *http.Request) {
 	var req createRoomRequest
 	if err := httpx.DecodeJSON(w, r, &req); err != nil {
@@ -105,18 +122,30 @@ func (h *Room) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	created, err := h.svc.Create(r.Context(), room.CreateInput{
-		HostID:     auth.UserID(r.Context()),
+	principal, _ := auth.FromContext(r.Context())
+
+	created, joined, err := h.svc.CreateAndJoin(r.Context(), room.CreateInput{
+		HostID:     principal.UserID,
 		Title:      req.Title,
 		Topic:      req.Topic,
 		Visibility: room.Visibility(req.Visibility),
-	})
+	}, principal.UserID)
 	if err != nil {
 		writeRoomError(w, r, err)
 		return
 	}
 
-	httpx.Created(w, toRoomDTO(created))
+	httpx.Created(w, createdRoomDTO{
+		roomDTO: toRoomDTO(created),
+		Join: joinDTO{
+			RoomID:     joined.RoomID,
+			Role:       string(joined.Role),
+			CanPublish: joined.CanPublish,
+			SFURoomID:  joined.SFURoomID,
+			SFUToken:   joined.SFUToken,
+			SFUURL:     joined.SFUURL,
+		},
+	})
 }
 
 type joinDTO struct {
@@ -171,13 +200,71 @@ func (h *Room) Leave(w http.ResponseWriter, r *http.Request) {
 }
 
 type participantDTO struct {
+	UserID      string `json:"user_id"`
+	Username    string `json:"username"`
+	DisplayName string `json:"display_name"`
+
+	// URL siap pakai, bukan id media. Klien tidak punya cara mengubah id
+	// menjadi URL, jadi mengirim id saja membuat avatar mustahil dirender.
+	AvatarURL string `json:"avatar_url,omitempty"`
+
+	Role          string    `json:"role"`
+	IsMuted       bool      `json:"is_muted"`
+	HasRaisedHand bool      `json:"has_raised_hand"`
+	JoinedAt      time.Time `json:"joined_at"`
+}
+
+type speakRequestDTO struct {
 	UserID      string    `json:"user_id"`
 	Username    string    `json:"username"`
 	DisplayName string    `json:"display_name"`
-	AvatarID    string    `json:"avatar_media_id,omitempty"`
-	Role        string    `json:"role"`
-	IsMuted     bool      `json:"is_muted"`
-	JoinedAt    time.Time `json:"joined_at"`
+	AvatarURL   string    `json:"avatar_url,omitempty"`
+	RequestedAt time.Time `json:"requested_at"`
+}
+
+// SpeakRequests menangani GET /api/v1/rooms/{id}/speak-requests.
+//
+// Inilah yang membuat "angkat tangan" bermakna: tanpa endpoint ini, host tidak
+// punya cara melihat siapa yang meminta izin, dan permintaan menggantung
+// selamanya di sisi peminta.
+func (h *Room) SpeakRequests(w http.ResponseWriter, r *http.Request) {
+	reqs, err := h.svc.SpeakRequests(r.Context(), r.PathValue("id"))
+	if err != nil {
+		writeRoomError(w, r, err)
+		return
+	}
+
+	items := make([]speakRequestDTO, 0, len(reqs))
+	for _, q := range reqs {
+		items = append(items, speakRequestDTO{
+			UserID:      q.UserID,
+			Username:    q.Username,
+			DisplayName: q.DisplayName,
+			AvatarURL:   h.media.PublicURL(q.AvatarKey),
+			RequestedAt: q.RequestedAt,
+		})
+	}
+
+	httpx.Page(w, items, pageMeta{Count: len(items)})
+}
+
+type inviteRequest struct {
+	UserID string `json:"user_id"`
+}
+
+// Invite menangani POST /api/v1/rooms/{id}/invite — untuk room invite_only.
+func (h *Room) Invite(w http.ResponseWriter, r *http.Request) {
+	var req inviteRequest
+	if err := httpx.DecodeJSON(w, r, &req); err != nil {
+		httpx.Fail(w, r, http.StatusBadRequest, httpx.CodeBadRequest, err.Error())
+		return
+	}
+
+	if err := h.svc.Invite(r.Context(), r.PathValue("id"), req.UserID); err != nil {
+		writeRoomError(w, r, err)
+		return
+	}
+	httpx.NoContent(w)
 }
 
 // Participants menangani GET /api/v1/rooms/{id}/participants.
@@ -191,13 +278,14 @@ func (h *Room) Participants(w http.ResponseWriter, r *http.Request) {
 	items := make([]participantDTO, 0, len(people))
 	for _, p := range people {
 		items = append(items, participantDTO{
-			UserID:      p.UserID,
-			Username:    p.Username,
-			DisplayName: p.DisplayName,
-			AvatarID:    p.AvatarID,
-			Role:        string(p.Role),
-			IsMuted:     p.IsMuted,
-			JoinedAt:    p.JoinedAt,
+			UserID:        p.UserID,
+			Username:      p.Username,
+			DisplayName:   p.DisplayName,
+			AvatarURL:     h.media.PublicURL(p.AvatarKey),
+			Role:          string(p.Role),
+			IsMuted:       p.IsMuted,
+			HasRaisedHand: p.HasRaisedHand,
+			JoinedAt:      p.JoinedAt,
 		})
 	}
 
@@ -230,7 +318,7 @@ func (h *Room) SetRole(w http.ResponseWriter, r *http.Request) {
 
 // RequestSpeak menangani POST /api/v1/rooms/{id}/raise-hand.
 func (h *Room) RequestSpeak(w http.ResponseWriter, r *http.Request) {
-	if err := h.svc.RequestSpeak(r.Context(), r.PathValue("id")); err != nil {
+	if err := h.svc.RequestSpeak(r.Context(), r.PathValue("id"), auth.UserID(r.Context())); err != nil {
 		writeRoomError(w, r, err)
 		return
 	}

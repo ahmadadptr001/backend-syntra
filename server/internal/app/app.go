@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"time"
 
 	goredis "github.com/redis/go-redis/v9"
 
@@ -43,6 +44,7 @@ type App struct {
 	supa   *supabase.Client
 	redis  *goredis.Client
 	hub    *ws.Hub
+	rooms  *room.Service
 	server *http.Server
 }
 
@@ -98,7 +100,7 @@ func New(ctx context.Context, cfg *config.Config, log *slog.Logger) (*App, error
 	userService := user.NewService(userRepo)
 	mediaService := media.NewService(mediaRepo, mediaStorage, cfg.Supabase.StorageBucket)
 	presenceService := presence.NewService(presenceStore, cfg.WS.PresenceTTL)
-	roomService := room.NewService(roomRepo, sfu)
+	roomService := room.NewService(roomRepo, sfu, ws.NewPublisher(hub))
 
 	// --- transport: websocket ---
 	wsRouter := ws.NewRouter(log)
@@ -134,7 +136,7 @@ func New(ctx context.Context, cfg *config.Config, log *slog.Logger) (*App, error
 		Story: handler.NewStory(storyService, mediaService),
 		User:  handler.NewUser(userService, mediaService),
 		Media: handler.NewMedia(mediaService),
-		Room:  handler.NewRoom(roomService),
+		Room:  handler.NewRoom(roomService, mediaService),
 	})
 
 	server := &http.Server{
@@ -161,8 +163,36 @@ func New(ctx context.Context, cfg *config.Config, log *slog.Logger) (*App, error
 		supa:   supa,
 		redis:  rdb,
 		hub:    hub,
+		rooms:  roomService,
 		server: server,
 	}, nil
+}
+
+// closeStaleRooms menutup room yang ditinggalkan tanpa sempat diakhiri.
+//
+// Host yang aplikasinya tertutup paksa, kehabisan baterai, atau kehilangan
+// jaringan tidak pernah memanggil leave. Tanpa pembersihan berkala, room itu
+// menetap sebagai "live" selamanya dan menumpuk di daftar sebagai room hantu —
+// yang memang sudah terjadi sebelum ini ada.
+func (a *App) closeStaleRooms(ctx context.Context) {
+	ticker := time.NewTicker(5 * time.Minute)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			closed, err := a.rooms.CloseStale(ctx, 30)
+			if err != nil {
+				a.log.Warn("gagal menutup room terbengkalai", "error", err)
+				continue
+			}
+			if closed > 0 {
+				a.log.Info("room terbengkalai ditutup", "jumlah", closed)
+			}
+		}
+	}
 }
 
 // Run menjalankan aplikasi sampai ctx dibatalkan atau ada komponen yang gagal.
@@ -188,6 +218,8 @@ func (a *App) Run(ctx context.Context) error {
 			errCh <- fmt.Errorf("ws bridge: %w", err)
 		}
 	}()
+
+	go a.closeStaleRooms(ctx)
 
 	select {
 	case <-ctx.Done():

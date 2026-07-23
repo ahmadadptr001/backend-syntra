@@ -107,6 +107,10 @@ func NewRouter(d Deps) http.Handler {
 		protected(http.HandlerFunc(d.Room.SetRole)))
 	mux.Handle("POST /api/v1/rooms/{id}/raise-hand",
 		protected(http.HandlerFunc(d.Room.RequestSpeak)))
+	mux.Handle("GET /api/v1/rooms/{id}/speak-requests",
+		protected(http.HandlerFunc(d.Room.SpeakRequests)))
+	mux.Handle("POST /api/v1/rooms/{id}/invite",
+		protected(http.HandlerFunc(d.Room.Invite)))
 	mux.Handle("PATCH /api/v1/rooms/{id}/mute",
 		protected(http.HandlerFunc(d.Room.SetMuted)))
 

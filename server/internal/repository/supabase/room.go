@@ -45,13 +45,22 @@ type joinRow struct {
 }
 
 type participantRow struct {
+	UserID        string    `json:"user_id"`
+	Username      string    `json:"username"`
+	DisplayName   string    `json:"display_name"`
+	AvatarKey     string    `json:"avatar_key"`
+	Role          string    `json:"role"`
+	IsMuted       bool      `json:"is_muted"`
+	HasRaisedHand bool      `json:"has_raised_hand"`
+	JoinedAt      time.Time `json:"joined_at"`
+}
+
+type speakRequestRow struct {
 	UserID      string    `json:"user_id"`
 	Username    string    `json:"username"`
 	DisplayName string    `json:"display_name"`
-	Avatar      *string   `json:"avatar"`
-	Role        string    `json:"role"`
-	IsMuted     bool      `json:"is_muted"`
-	JoinedAt    time.Time `json:"joined_at"`
+	AvatarKey   string    `json:"avatar_key"`
+	RequestedAt time.Time `json:"requested_at"`
 }
 
 // Create memanggil fungsi create_room.
@@ -127,17 +136,75 @@ func (r *RoomRepository) Join(ctx context.Context, roomID string) (room.Role, st
 }
 
 // Leave memanggil fungsi leave_room.
-func (r *RoomRepository) Leave(ctx context.Context, roomID string) error {
+//
+// Mengembalikan true kalau yang keluar adalah host — artinya room ikut
+// berakhir dan peserta lain perlu diberi tahu.
+func (r *RoomRepository) Leave(ctx context.Context, roomID string) (bool, error) {
+	actor, err := callerOption(ctx)
+	if err != nil {
+		return false, err
+	}
+
+	var ended bool
+	if err := r.client.RPC(ctx, "leave_room",
+		map[string]any{"p_room": roomID}, &ended, actor); err != nil {
+		return false, translateRoom(err)
+	}
+	return ended, nil
+}
+
+// ListSpeakRequests memanggil fungsi list_speak_requests.
+func (r *RoomRepository) ListSpeakRequests(ctx context.Context, roomID string) ([]room.SpeakRequest, error) {
+	actor, err := callerOption(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var rows []speakRequestRow
+	if err := r.client.RPC(ctx, "list_speak_requests",
+		map[string]any{"p_room": roomID}, &rows, actor); err != nil {
+		return nil, translateRoom(err)
+	}
+
+	out := make([]room.SpeakRequest, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, room.SpeakRequest{
+			UserID:      row.UserID,
+			Username:    row.Username,
+			DisplayName: row.DisplayName,
+			AvatarKey:   row.AvatarKey,
+			RequestedAt: row.RequestedAt,
+		})
+	}
+	return out, nil
+}
+
+// Invite memanggil fungsi invite_to_room.
+func (r *RoomRepository) Invite(ctx context.Context, roomID, userID string) error {
 	actor, err := callerOption(ctx)
 	if err != nil {
 		return err
 	}
 
-	if err := r.client.RPC(ctx, "leave_room",
-		map[string]any{"p_room": roomID}, nil, actor); err != nil {
+	args := map[string]any{"p_room": roomID, "p_user": userID}
+	if err := r.client.RPC(ctx, "invite_to_room", args, nil, actor); err != nil {
 		return translateRoom(err)
 	}
 	return nil
+}
+
+// CloseStale memanggil fungsi close_stale_rooms.
+//
+// Memakai kunci service karena ini pekerjaan latar yang tidak mewakili
+// pengguna mana pun — tidak ada JWT yang bisa dipinjam.
+func (r *RoomRepository) CloseStale(ctx context.Context, idleMinutes int) (int, error) {
+	var closed int
+	if err := r.client.RPC(ctx, "close_stale_rooms",
+		map[string]any{"p_idle_minutes": idleMinutes}, &closed,
+		sb.WithServiceRole()); err != nil {
+		return 0, translateRoom(err)
+	}
+	return closed, nil
 }
 
 // ListParticipants memanggil fungsi list_room_participants.
@@ -156,13 +223,14 @@ func (r *RoomRepository) ListParticipants(ctx context.Context, roomID string) ([
 	out := make([]room.Participant, 0, len(rows))
 	for _, row := range rows {
 		out = append(out, room.Participant{
-			UserID:      row.UserID,
-			Username:    row.Username,
-			DisplayName: row.DisplayName,
-			AvatarID:    deref(row.Avatar),
-			Role:        room.Role(row.Role),
-			IsMuted:     row.IsMuted,
-			JoinedAt:    row.JoinedAt,
+			UserID:        row.UserID,
+			Username:      row.Username,
+			DisplayName:   row.DisplayName,
+			AvatarKey:     row.AvatarKey,
+			Role:          room.Role(row.Role),
+			IsMuted:       row.IsMuted,
+			HasRaisedHand: row.HasRaisedHand,
+			JoinedAt:      row.JoinedAt,
 		})
 	}
 	return out, nil

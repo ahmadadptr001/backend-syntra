@@ -158,8 +158,7 @@ penerjemah error untuk kedua transport.
 
 ## 3. Ringkasan seluruh rute
 
-Seluruh baris di tabel ini **diverifikasi jalan** lewat
-`server/scripts/smoke.ps1` — 24 lulus, 0 gagal.
+Seluruh baris di tabel ini **diverifikasi jalan** lewat `server/scripts/smoke.ps1`.
 
 | Method | Path | Auth |
 |---|---|---|
@@ -187,6 +186,8 @@ Seluruh baris di tabel ini **diverifikasi jalan** lewat
 | `GET` | `/api/v1/rooms/{id}/participants` | ✅ |
 | `PATCH` | `/api/v1/rooms/{id}/participants` | ✅ |
 | `POST` | `/api/v1/rooms/{id}/raise-hand` | ✅ |
+| `GET` | `/api/v1/rooms/{id}/speak-requests` | ✅ |
+| `POST` | `/api/v1/rooms/{id}/invite` | ✅ |
 | `PATCH` | `/api/v1/rooms/{id}/mute` | ✅ |
 | `POST` | `/api/v1/media/upload-url` | ✅ |
 | `POST` | `/api/v1/media/{id}/confirm` | ✅ |

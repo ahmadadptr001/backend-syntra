@@ -309,10 +309,7 @@ ke sana.
 
 Belum ada:
 
-- **Event peserta masuk/keluar.** Topik `room:<id>` sudah membawa chat teks,
-  tetapi backend belum menyiarkan event saat seseorang masuk, keluar, atau naik
-  peran — klien perlu polling `GET /participants` untuk itu. Ini yang paling
-  layak dikerjakan berikutnya, dan jalur siarannya sudah ada.
+- Perekaman room (`is_recorded` ada di skema, belum dipakai)
 - Perekaman room (`is_recorded` sudah ada di skema, belum dipakai). Perlu
   diingat: merekam suara butuh persetujuan eksplisit semua peserta di banyak
   yurisdiksi — tabel `consents` sudah menyediakan tempatnya.
