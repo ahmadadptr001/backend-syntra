@@ -486,13 +486,18 @@ Sebuah pesan sistem "X keluar" diterbitkan.
 ### `PUT /api/v1/conversations/{id}/mute`
 
 Membisukan / membunyikan notifikasi percakapan **hanya untuk pemanggil**.
+Terima dua bentuk — pakai salah satu:
 
 ```json
-{ "muted": true }
+{ "duration_minutes": 480 }   // bisukan 8 jam
+{ "duration_minutes": null }  // bunyikan lagi
+{ "muted_until": "2026-07-25T00:00:00Z" }  // alternatif waktu absolut
 ```
 
-Balasan `204`. Ini preferensi personal — tidak memengaruhi anggota lain dan
-tidak menghentikan pesan tetap masuk, hanya menekan notifikasi push.
+`duration_minutes` bernilai `null`/`0` (atau `muted_until: null`) berarti
+membunyikan kembali. Balasan `204`. Ini preferensi personal — tidak memengaruhi
+anggota lain dan tidak menghentikan pesan tetap masuk, hanya menekan notifikasi
+push.
 
 ### `GET /api/v1/conversations/{id}/members`
 

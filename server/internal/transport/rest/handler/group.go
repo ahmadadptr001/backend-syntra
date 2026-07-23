@@ -145,18 +145,38 @@ func (h *Chat) SetMemberRole(w http.ResponseWriter, r *http.Request) {
 }
 
 type muteRequest struct {
-	// null = bunyikan lagi; RFC3339 = bisukan sampai waktu itu.
+	// Aplikasi mengirim durasi dalam menit — inilah bentuk utama yang dipakai
+	// klien: null/0 berarti bunyikan lagi, angka positif membisukan selama itu.
+	DurationMinutes *int `json:"duration_minutes"`
+
+	// Alternatif waktu absolut RFC3339 (null = bunyikan lagi). Disediakan bagi
+	// klien yang lebih suka menghitung sendiri kapan bisu berakhir.
 	MutedUntil *time.Time `json:"muted_until"`
 }
 
 // Mute menangani PUT /api/v1/conversations/{id}/mute.
+//
+// Menerima dua bentuk supaya cocok dengan aplikasi (duration_minutes) tanpa
+// menutup pintu bagi klien yang mengirim waktu absolut (muted_until). Keduanya
+// bermuara pada satu nilai: kapan bisu berakhir — atau nil untuk membunyikan.
 func (h *Chat) Mute(w http.ResponseWriter, r *http.Request) {
 	var req muteRequest
 	if err := httpx.DecodeJSON(w, r, &req); err != nil {
 		httpx.Fail(w, r, http.StatusBadRequest, httpx.CodeBadRequest, err.Error())
 		return
 	}
-	if err := h.svc.Mute(r.Context(), r.PathValue("id"), auth.UserID(r.Context()), req.MutedUntil); err != nil {
+
+	var until *time.Time
+	switch {
+	case req.DurationMinutes != nil && *req.DurationMinutes > 0:
+		t := time.Now().UTC().Add(time.Duration(*req.DurationMinutes) * time.Minute)
+		until = &t
+	case req.MutedUntil != nil:
+		until = req.MutedUntil
+	}
+	// Selain itu until tetap nil → bunyikan lagi.
+
+	if err := h.svc.Mute(r.Context(), r.PathValue("id"), auth.UserID(r.Context()), until); err != nil {
 		writeDomainError(w, r, err)
 		return
 	}
