@@ -1,0 +1,392 @@
+# Syntra
+
+Aplikasi chat Android bergaya modern (mirip WhatsApp) yang dibangun sepenuhnya dengan
+**Jetpack Compose**. Syntra menampilkan daftar percakapan, story/status ala WhatsApp
+(dengan foto & video), layar percakapan, halaman Shorts, serta fitur scan barcode,
+pencarian, dan menu — semuanya dalam tema gelap `#121212` dengan font **Raleway**.
+
+> **Status data:** di dalam aplikasi ini, seluruh data (chat, pesan, story) masih
+> **dummy/in-memory** dan hilang saat aplikasi ditutup.
+>
+> **Backend-nya sudah ada dan siap disambungkan** — Go + Supabase + WebSocket,
+> berada di repo yang sama. Yang tersisa adalah pekerjaan di sisi klien:
+> mengganti sumber data in-memory dengan panggilan ke API.
+>
+> Mulai dari [`../docs/api.md`](../docs/api.md) — kontrak integrasi lengkap,
+> berisi seluruh endpoint, frame WebSocket, dan urutan pemanggilan saat
+> aplikasi dibuka. Pemetaan tiap layar di dokumen ini ke endpoint yang
+> melayaninya ada di
+> [`../docs/app-backend-alignment.md`](../docs/app-backend-alignment.md).
+> Khusus voice room, baca [`../docs/voice-rooms.md`](../docs/voice-rooms.md) —
+> ada satu hal di sana yang mengubah cara layar Rooms harus dibangun.
+
+---
+
+## Catatan penyambungan — hal yang mengubah asumsi
+
+Empat hal yang perlu diketahui sebelum mulai mengganti sumber data. Semuanya
+sudah tersedia di backend.
+
+### 1. Voice room: suara TIDAK lewat backend
+
+Backend tidak mengalirkan audio dan tidak akan pernah — audio realtime butuh
+UDP/WebRTC, sedangkan WebSocket berjalan di atas TCP. Suara ditangani **LiveKit**;
+backend hanya menerbitkan token yang menentukan siapa boleh masuk dan siapa
+boleh bicara.
+
+Artinya untuk layar Rooms, app perlu menambahkan dependensi:
+
+```gradle
+implementation "io.livekit:livekit-android:<versi>"
+```
+
+plus izin runtime `RECORD_AUDIO`. Alurnya:
+`POST /rooms/{id}/join` → dapat `sfu_url` + `sfu_token` → `room.connect(...)`
+→ suara terdengar.
+
+Satu jebakan: **setelah peran naik jadi speaker, harus panggil `join` lagi.**
+Token lama diterbitkan dengan `canPublish: false` dan tidak akan bisa menyalakan
+mikrofon meski tombolnya sudah muncul.
+
+Kalau `meta.sfu_ready` bernilai `false` di `GET /rooms`, media server belum
+dikonfigurasi — sembunyikan tombol Join, karena bergabung tidak akan
+menghasilkan suara.
+
+### 2. Chat di dalam room bersifat efemeral
+
+Berbeda total dari chat percakapan biasa. Pesan room **tidak pernah disimpan**:
+disiarkan lewat WebSocket, lalu hilang. Begitu room berakhir, percakapannya
+lenyap selamanya.
+
+| | Chat percakapan | Chat voice room |
+|---|---|---|
+| Disimpan | ya | **tidak** |
+| Riwayat | `GET .../messages` | tidak ada |
+| Id pesan & `ack` | ya | tidak ada |
+| Sinkronisasi saat reconnect | ya | tidak — yang lewat memang hilang |
+
+Kirim `{"type":"room.chat","data":{"room_id":"...","body":"..."}}`, terima
+`room.message`. Maksimum 500 karakter.
+
+**Jangan meng-cache chat room ke Room/DataStore.** Ia dirancang hilang; kalau
+disimpan, app akan menampilkan riwayat yang tidak dimiliki peserta lain.
+
+### 3. Indikator ✓✓ sudah bisa digambar
+
+`GET /conversations` mengembalikan `counterpart_last_read_id`. Karena id memakai
+UUIDv7 yang terurut waktu, cukup bandingkan:
+
+```kotlin
+val sudahDibaca = pesan.id <= conversation.counterpartLastReadId
+```
+
+Tidak perlu tabel receipt, tidak perlu endpoint tambahan.
+
+### 4. Follow sudah ada — dan story bergantung padanya
+
+`POST` / `DELETE /users/{username}/follow`, dan `GET /users/me/following`.
+
+Yang perlu diperhatikan: **`GET /stories` hanya menampilkan story dari orang
+yang sudah diikuti dengan status `accepted`.** Kalau story row terlihat kosong
+selain milik sendiri, itu bukan bug story — periksa daftar following dulu.
+
+`GET /users/{username}` sekarang juga mengembalikan `follow_status`
+(`""` / `pending` / `accepted`) untuk menentukan label tombol
+Follow / Requested / Following.
+
+> Akun privat menghasilkan status `pending`, dan **belum ada endpoint untuk
+> menyetujuinya**. Untuk sementara pakai akun publik — kalau tidak, permintaan
+> follow menggantung dan story tetap tidak muncul.
+
+### Akun uji yang sudah tersedia
+
+| Email | Password | Username |
+|---|---|---|
+| `admin@syntra.app` | `admin123` | admin |
+| `budi@syntra.app` | `budi123456` | budi |
+| `citra@syntra.app` | `citra123456` | citra |
+
+Login lewat Supabase Auth (bukan ke backend ini) untuk memperoleh JWT — caranya
+ada di [`../docs/api.md`](../docs/api.md) §1.
+
+---
+
+## Daftar Isi
+
+- [Teknologi](#teknologi)
+- [Struktur Proyek](#struktur-proyek)
+- [Cara Menjalankan](#cara-menjalankan)
+- [Arsitektur & Navigasi](#arsitektur--navigasi)
+- [Alur Aplikasi per Layar](#alur-aplikasi-per-layar)
+  - [1. Layar Chat (daftar percakapan)](#1-layar-chat-daftar-percakapan)
+  - [2. Story / Status Viewer](#2-story--status-viewer)
+  - [3. Menambah Story (foto/video)](#3-menambah-story-fotovideo)
+  - [4. Layar Percakapan (Chat Detail)](#4-layar-percakapan-chat-detail)
+  - [5. Layar Shorts](#5-layar-shorts)
+  - [6. Scan Barcode / QR](#6-scan-barcode--qr)
+  - [7. Pencarian](#7-pencarian)
+  - [8. Menu Titik-Tiga](#8-menu-titik-tiga)
+- [Tema, Warna & Font](#tema-warna--font)
+- [Model Data](#model-data)
+- [Izin & Ketergantungan Runtime](#izin--ketergantungan-runtime)
+- [Keterbatasan & Ide Pengembangan](#keterbatasan--ide-pengembangan)
+
+---
+
+## Teknologi
+
+| Bagian | Detail |
+|--------|--------|
+| Bahasa | Kotlin |
+| UI | Jetpack Compose (Material 3) |
+| Min SDK | 26 (Android 8.0) |
+| Target SDK | 37 |
+| Font | Raleway (variable font, bundel lokal) |
+| Ikon | `material-icons-extended` |
+| Scanner | Google Code Scanner (`play-services-code-scanner`) |
+| Media | `VideoView` (video story), Android Photo Picker |
+
+---
+
+## Struktur Proyek
+
+```
+app/src/main/java/com/example/syntra/
+├── MainActivity.kt        # Entry point; host tab (Chat/Shorts) + state navigasi bawah
+├── ChatScreen.kt          # Layar Chat: header, story row, daftar chat, story viewer, add-story, search, scan, menu
+├── ChatDetailScreen.kt    # Layar percakapan (bubble chat + input bar)
+├── ShortsScreen.kt        # Layar Shorts (video vertikal ala TikTok/Reels)
+├── NexusNav.kt            # Bottom navigation bar bersama (enum NexusTab + NexusBottomBar)
+└── ui/theme/
+    ├── Color.kt           # Palet warna Syntra (background #121212, aksen biru, dll.)
+    ├── Theme.kt           # SyntraTheme: skema warna gelap + Raleway sebagai font default
+    └── Type.kt            # Definisi FontFamily Raleway + Typography Material 3
+
+app/src/main/res/
+├── font/raleway_variable.ttf     # Font Raleway (variable weight)
+├── drawable/story_*.jpg          # Foto placeholder untuk story bawaan
+├── values/colors.xml             # syntra_background = #121212
+└── values/themes.xml             # Theme.Syntra (windowBackground #121212, status/nav bar transparan)
+```
+
+---
+
+## Cara Menjalankan
+
+1. Buka proyek di **Android Studio** (versi terbaru).
+2. Jalankan **Sync Gradle** (mengunduh dependency, termasuk scanner & ikon).
+3. Pilih perangkat/emulator. Untuk fitur **scan barcode**, gunakan emulator/HP yang
+   memiliki **Google Play Services** (mis. image emulator "Google Play").
+4. Tekan **Run** ▶.
+
+> Preview Compose tersedia (`@Preview`) di `ChatScreen.kt` & `ShortsScreen.kt`
+> untuk melihat UI tanpa menjalankan emulator penuh.
+
+---
+
+## Arsitektur & Navigasi
+
+Aplikasi menggunakan **satu Activity** (`MainActivity`) dan navigasi berbasis **state**
+(bukan Navigation Component). Perpindahan antar layar dilakukan dengan menampilkan/menyembunyikan
+composable secara kondisional.
+
+```
+MainActivity
+ └── SyntraTheme
+      └── NexusApp                     // menyimpan tab terpilih (NexusTab)
+           ├── ChatScreen              // saat tab == CHAT / ROOMS / CALLS
+           │    ├── overlay StoryViewer      // saat sebuah story diklik
+           │    └── overlay ChatDetailScreen // saat sebuah chat diklik
+           └── ShortsScreen            // saat tab == SHORTS
+```
+
+- **Bottom Navigation** (`NexusBottomBar`) punya 4 tab: **Chat, Shorts, Rooms, Calls**.
+  Chat & Shorts sudah berisi layar; Rooms & Calls sementara menampilkan layar Chat (placeholder).
+- **Story Viewer** dan **Chat Detail** ditampilkan sebagai **overlay layar penuh** di atas
+  `ChatScreen`, dan ditutup dengan tombol Back perangkat / gestur / tombol close.
+
+---
+
+## Alur Aplikasi per Layar
+
+### 1. Layar Chat (daftar percakapan)
+
+Layar utama saat aplikasi dibuka (`ChatScreen.kt`).
+
+**Susunan dari atas ke bawah:**
+- **Header** — ikon **scan** (kiri), judul **"Syntra"**, ikon **search** & **titik-tiga** (kanan).
+- **Story row** (`ActiveRow`) — deretan avatar bundar berisi foto. Ring di sekeliling avatar
+  berupa **segmen garis** yang jumlahnya = jumlah story yang di-post orang tersebut.
+- **Daftar percakapan** (`ConversationRow`) — tiap baris: avatar, nama, cuplikan pesan,
+  waktu, badge jumlah pesan belum dibaca, indikator status (online = titik hijau,
+  typing = teks miring biru, terkirim = ✓✓).
+- **Tombol + mengambang** (kanan bawah) — untuk menambah story.
+- **Bottom navigation**.
+
+**Interaksi:**
+- Ketuk sebuah **story** → membuka [Story Viewer](#2-story--status-viewer).
+- Ketuk sebuah **chat** → membuka [Chat Detail](#4-layar-percakapan-chat-detail).
+- Ketuk **+** → membuka [alur tambah story](#3-menambah-story-fotovideo).
+- Ketuk **scan / search / titik-tiga** → lihat bagian masing-masing di bawah.
+
+### 2. Story / Status Viewer
+
+Composable `StoryViewer` — pengalaman menonton story layar penuh ala **Status WhatsApp**.
+
+**Fitur & alur:**
+- **Progress bar segmen** di atas — satu bar per story milik orang tersebut.
+- **Auto-advance:**
+  - Story **foto**: berpindah otomatis setelah **5 detik**.
+  - Story **video**: **diputar sampai selesai** dulu (progress bar mengikuti posisi
+    pemutaran video nyata) baru berpindah.
+- **Navigasi manual:** ketuk sisi **kanan** = story berikutnya, sisi **kiri** = sebelumnya.
+  Setelah story terakhir orang terakhir → viewer tertutup.
+- **Perpindahan otomatis antar-orang** (Lena → Marcus → …), persis WhatsApp.
+- **Swipe ke atas untuk menutup** — konten mengalami **transisi besar → kecil**
+  (mengecil, memudar, sudut membulat). Jika tarikan melewati ambang → lanjut menyusut lalu
+  tertutup; jika belum → memantul kembali (spring). Ada juga animasi **fade + scale-up** saat
+  viewer pertama kali dibuka.
+- **Tanda "sudah ditonton" (seen):** setelah semua story seseorang selesai ditonton, ring
+  berwarna pada avatarnya di daftar **hilang** dan diganti garis abu tipis (seperti WhatsApp/Instagram).
+- Tombol **Back** perangkat & tombol **✕** juga menutup viewer.
+
+### 3. Menambah Story (foto/video)
+
+Alur dari tombol **+** di layar Chat:
+
+1. Membuka **Android Photo Picker** (`PickVisualMedia` mode `ImageAndVideo`) — tanpa perlu
+   izin runtime.
+2. Pengguna memilih **foto atau video**:
+   - **Foto** → di-decode menjadi bitmap (`StoryImage.Bitmap`).
+   - **Video** → frame pertama diekstrak sebagai thumbnail (`MediaMetadataRetriever`),
+     disimpan sebagai `StoryImage.Video(uri, thumbnail)`.
+3. Story baru **ditambahkan di depan** story row dengan label **"Your story"** dan bisa
+   langsung diklik untuk ditonton (video akan diputar via `VideoView`).
+
+### 4. Layar Percakapan (Chat Detail)
+
+Composable `ChatDetailScreen` — dibuka saat sebuah chat diklik.
+
+**Susunan:**
+- **Top bar ringkas** — avatar + nama + status (`online` / `typing…` / `last seen recently`),
+  lalu ikon **video call, call, titik-tiga**. Nama panjang otomatis dipotong dengan **ellipsis**
+  (mis. `reza ramadhan start` → `reza ramadhan…`).
+- **Daftar pesan** — gelembung chat: pesan masuk rata kiri (abu), pesan sendiri rata kanan
+  (biru), masing-masing berjam. Ada chip tanggal **"Today"**.
+- **Input bar** — kolom teks (placeholder "Message") dengan ikon emoji/lampiran/kamera, dan
+  tombol bulat yang berubah **mic ↔ kirim** tergantung ada tidaknya teks.
+
+**Interaksi:**
+- Mengetik lalu **kirim** → pesan baru ditambahkan dan daftar **auto-scroll** ke bawah.
+- Keyboard mendorong input ke atas (`imePadding`).
+- Tombol **Back** perangkat kembali ke daftar chat.
+
+### 5. Layar Shorts
+
+Composable `ShortsScreen` — tampilan video vertikal ala TikTok/Reels (saat ini area video
+masih placeholder).
+
+**Elemen:**
+- Header "Nexus" + ikon search + avatar.
+- Caption: username (`@quantum_flow`), tombol **Follow**, deskripsi, dan baris audio.
+- **Action rail** kanan: like (❤️ 24.5k), komentar (💬 842), share, dan thumbnail audio.
+- Bottom navigation (tab Shorts aktif).
+
+### 6. Scan Barcode / QR
+
+Ikon **scan** di kiri-atas header Chat.
+
+- Menggunakan **Google Code Scanner** (`GmsBarcodeScanning`) — membuka UI scanner penuh
+  dari Google, **tanpa** menangani izin/kamera manual.
+- Hasil scan (`barcode.rawValue`) ditampilkan lewat **Toast**.
+- Bila gagal (mis. tanpa Play Services) → Toast error.
+
+### 7. Pencarian
+
+Ikon **search** di header Chat.
+
+- Header berubah menjadi **kolom pencarian** dengan **auto-fokus** (keyboard langsung muncul).
+- Daftar chat **terfilter secara langsung** berdasarkan **nama** atau **isi pesan**
+  (case-insensitive). Story row disembunyikan selama mencari.
+- Jika tidak ada hasil → teks **"No conversations found"**.
+- Ikon **✕** mengosongkan teks; **panah kembali** atau tombol **Back** perangkat keluar dari
+  mode pencarian.
+
+### 8. Menu Titik-Tiga
+
+Ikon **titik-tiga** di header Chat.
+
+- Membuka **DropdownMenu** dengan opsi: **New group**, **Starred messages**, **Settings**.
+- Saat ini setiap opsi memunculkan **Toast** (placeholder) — siap disambungkan ke aksi nyata.
+
+---
+
+## Tema, Warna & Font
+
+- **Tema gelap tetap** (dynamic color dimatikan) agar tampilan konsisten.
+- **Background utama `#121212`** diterapkan di semua layer, termasuk `windowBackground`
+  di `themes.xml` supaya tidak ada kedip putih saat aplikasi dibuka.
+- Palet kunci (`Color.kt`):
+  - `NexusBackground` `#121212` — latar utama
+  - `NexusSurface` / `NexusSurfaceElevated` — permukaan/kartu & gelembung pesan masuk
+  - `NexusAccent` `#3B68F5` / `NexusAccentSoft` — aksen biru (tombol, timestamp, bubble keluar)
+  - `NexusRing` — ring story
+  - `NexusOnline` — titik status online
+- **Font Raleway** dipasang sebagai satu *variable font* dan dijadikan **default seluruh teks**
+  melalui `Typography` + `LocalTextStyle` di `SyntraTheme`.
+
+---
+
+## Model Data
+
+Semua data didefinisikan sebagai `data class` in-memory:
+
+- **`Conversation`** — `name`, `message`, `time`, `gradient`, `unread`, `presence`, `sent`.
+- **`Presence`** — enum `NONE` / `ONLINE` / `TYPING`.
+- **`ActivePerson`** (story) — `name`, `photo: StoryImage`, `posts` (jumlah story).
+- **`StoryImage`** (sealed) — `Res` (drawable bawaan), `Bitmap` (foto galeri), `Video` (uri + thumbnail).
+- **`Message`** (di Chat Detail) — `text`, `fromMe`, `time`.
+
+Daftar awal (`conversations`, `defaultActivePeople`) berisi contoh statis; story tambahan dan
+pesan baru disimpan di `mutableStateList`/`mutableStateOf` selama sesi berjalan.
+
+---
+
+## Izin & Ketergantungan Runtime
+
+- **Tidak butuh izin kamera manual** untuk scan (ditangani Google Code Scanner) maupun untuk
+  memilih media (Android Photo Picker).
+- **Google Play Services** diperlukan agar scan barcode berfungsi. Modul scanner di-*prefetch*
+  lewat `meta-data com.google.mlkit.vision.DEPENDENCIES = barcode_ui` di `AndroidManifest.xml`.
+- `android:windowSoftInputMode="adjustResize"` agar input chat & search terdorong keyboard.
+
+---
+
+## Keterbatasan & Ide Pengembangan
+
+Keterbatasan saat ini (karena fokus pada UI/UX):
+
+- Semua data **dummy & tidak persisten** (hilang setelah app ditutup).
+- Story tambahan, status "seen", dan pesan baru hanya bertahan **selama sesi**.
+- Tab **Rooms** sudah punya layarnya sendiri (Voice Hub), tetapi masih data
+  statis dan tombol Join belum aktif. **Backend-nya kini sudah siap** — lihat
+  catatan penyambungan §1 di atas dan
+  [`../docs/voice-rooms.md`](../docs/voice-rooms.md). Tab **Calls** masih
+  placeholder di kedua sisi.
+- Area video **Shorts** masih placeholder; item menu titik-tiga masih Toast.
+- Durasi progress bar video mengikuti durasi pemutaran, tetapi story foto tetap 5 detik.
+
+Ide pengembangan lanjutan:
+
+- **Menyambungkan ke backend Syntra** — bukan Firebase. Backend-nya sudah ada:
+  - **Supabase Auth SDK** untuk login → menghasilkan JWT
+  - **OkHttp/Ktor** ke `https://<host>/api/v1/...` untuk REST
+  - **OkHttp WebSocket** ke `wss://<host>/api/v1/ws` untuk realtime
+  - Satu-satunya bagian Google yang tetap relevan adalah **FCM** untuk push
+    notification saat aplikasi tertutup, dan itu belum dirancang di kedua sisi
+- Penyimpanan lokal (Room/DataStore) sebagai cache offline. Ini tetap
+  dibutuhkan meski backend sudah ada — daftar chat harus tampil seketika saat
+  aplikasi dibuka, sebelum jaringan menjawab.
+- Navigation Component + multi-module untuk skala lebih besar.
+- Implementasi nyata Shorts (ExoPlayer), Rooms, Calls, dan aksi menu — ketiganya
+  juga belum ada di backend, jadi bisa dikerjakan berbarengan.

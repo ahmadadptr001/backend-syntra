@@ -1,0 +1,25 @@
+# binaries
+/bin/
+*.exe
+*.test
+
+# env & secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# tooling
+/coverage.out
+/vendor/
+.DS_Store
+
+# logs
+*.log
+
+# nginx runtime (dibuat otomatis saat dijalankan)
+deployments/nginx/logs/
+deployments/nginx/temp/
+deployments/nginx/*_temp/
+deployments/nginx/nginx.pid

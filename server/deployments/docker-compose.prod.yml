@@ -1,0 +1,101 @@
+# Deployment produksi untuk satu VPS.
+#
+#   docker compose -f deployments/docker-compose.prod.yml up -d --build
+#
+# Prasyarat di VPS:
+#   1. Domain sudah diarahkan (A record) ke IP publik VPS
+#   2. Port 80 dan 443 terbuka di firewall — Let's Encrypt memakai port 80
+#      untuk verifikasi, jadi tidak cukup hanya membuka 443
+#   3. Berkas .env sudah disalin ke folder server/ di VPS
+#
+# Yang WAJIB diubah di .env sebelum deploy:
+#   APP_ENV=production
+#   AUTH_DEV_BYPASS=false
+#   HTTP_CORS_ORIGINS=https://<domain>
+#   WS_ALLOWED_ORIGINS=https://<domain>
+#   LOG_FORMAT=json
+#
+# REDIS_URL tidak perlu diisi manual — di-override di bawah supaya menunjuk ke
+# container redis, bukan ke localhost.
+
+name: syntra
+
+services:
+  server:
+    build:
+      context: ..
+      dockerfile: deployments/Dockerfile
+    restart: unless-stopped
+
+    env_file:
+      - ../.env
+
+    environment:
+      HTTP_ADDR: ":8080"
+      REDIS_URL: "redis://redis:6379/0"
+
+    # Tidak ada healthcheck di sini dengan sengaja: image runtime memakai
+    # distroless yang tidak punya shell maupun curl, sehingga `test:` tidak
+    # bisa dijalankan. Kesehatan tetap terpantau lewat /readyz dari luar.
+
+    depends_on:
+      redis:
+        condition: service_healthy
+
+    # Port TIDAK dipublikasikan ke host. Satu-satunya jalan masuk adalah Caddy;
+    # membuka 8080 ke publik berarti melewati TLS dan rate limiting sekaligus.
+    expose:
+      - "8080"
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+
+    # appendonly menyala supaya isi Redis selamat dari restart container.
+    # Yang disimpan di sini memang efemeral (presence, typing, rate limit),
+    # tetapi kehilangan seluruhnya sekaligus membuat semua klien tampak
+    # offline serentak sampai mereka terhubung ulang.
+    command: ["redis-server", "--appendonly", "yes", "--save", "60", "1000"]
+
+    volumes:
+      - redis-data:/data
+
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+    expose:
+      - "6379"
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"   # HTTP/3
+
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data      # WAJIB persisten: berisi sertifikat TLS
+      - caddy-config:/config
+
+    environment:
+      SYNTRA_DOMAIN: "${SYNTRA_DOMAIN:?SYNTRA_DOMAIN wajib diisi, contoh: api.syntra.app}"
+
+    depends_on:
+      - server
+
+volumes:
+  redis-data:
+  caddy-data:
+  caddy-config:

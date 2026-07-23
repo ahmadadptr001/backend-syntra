@@ -1,0 +1,237 @@
+package supabase
+
+import (
+	"context"
+	"errors"
+	"time"
+
+	"github.com/ahmadadptr001/backend-syntra/internal/domain/room"
+	sb "github.com/ahmadadptr001/backend-syntra/internal/platform/supabase"
+)
+
+// SQLSTATE tambahan yang dipakai fungsi room.
+const sqlstateRoomFull = "53400" // configuration_limit_exceeded
+
+// RoomRepository memenuhi kontrak room.Repository.
+type RoomRepository struct {
+	client *sb.Client
+}
+
+// NewRoomRepository membuat repository voice room.
+func NewRoomRepository(client *sb.Client) *RoomRepository {
+	return &RoomRepository{client: client}
+}
+
+var _ room.Repository = (*RoomRepository)(nil)
+
+type roomRow struct {
+	ID               string    `json:"id"`
+	HostID           string    `json:"host_id"`
+	HostUsername     string    `json:"host_username"`
+	HostName         string    `json:"host_name"`
+	HostAvatar       *string   `json:"host_avatar"`
+	Title            string    `json:"title"`
+	Topic            string    `json:"topic"`
+	Visibility       string    `json:"visibility"`
+	ParticipantCount int       `json:"participant_count"`
+	SpeakerCount     int       `json:"speaker_count"`
+	MaxParticipants  int       `json:"max_participants"`
+	StartedAt        time.Time `json:"started_at"`
+}
+
+type joinRow struct {
+	Role      string  `json:"role"`
+	SFURoomID *string `json:"sfu_room_id"`
+}
+
+type participantRow struct {
+	UserID      string    `json:"user_id"`
+	Username    string    `json:"username"`
+	DisplayName string    `json:"display_name"`
+	Avatar      *string   `json:"avatar"`
+	Role        string    `json:"role"`
+	IsMuted     bool      `json:"is_muted"`
+	JoinedAt    time.Time `json:"joined_at"`
+}
+
+// Create memanggil fungsi create_room.
+func (r *RoomRepository) Create(ctx context.Context, rm room.Room) error {
+	actor, err := actorOption(ctx, rm.HostID)
+	if err != nil {
+		return err
+	}
+
+	args := map[string]any{
+		"p_id":         rm.ID,
+		"p_title":      rm.Title,
+		"p_topic":      rm.Topic,
+		"p_visibility": string(rm.Visibility),
+		"p_sfu_room":   rm.SFURoomID,
+	}
+
+	if err := r.client.RPC(ctx, "create_room", args, nil, actor); err != nil {
+		return translateRoom(err)
+	}
+	return nil
+}
+
+// List memanggil fungsi list_rooms.
+func (r *RoomRepository) List(ctx context.Context) ([]room.Room, error) {
+	actor, err := callerOption(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var rows []roomRow
+	if err := r.client.RPC(ctx, "list_rooms", map[string]any{}, &rows, actor); err != nil {
+		return nil, translateRoom(err)
+	}
+
+	out := make([]room.Room, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, room.Room{
+			ID:               row.ID,
+			HostID:           row.HostID,
+			HostUsername:     row.HostUsername,
+			HostName:         row.HostName,
+			HostAvatarID:     deref(row.HostAvatar),
+			Title:            row.Title,
+			Topic:            row.Topic,
+			Visibility:       room.Visibility(row.Visibility),
+			ParticipantCount: row.ParticipantCount,
+			SpeakerCount:     row.SpeakerCount,
+			MaxParticipants:  row.MaxParticipants,
+			StartedAt:        row.StartedAt,
+		})
+	}
+	return out, nil
+}
+
+// Join memanggil fungsi join_room dan mengembalikan peran yang diberikan.
+func (r *RoomRepository) Join(ctx context.Context, roomID string) (room.Role, string, error) {
+	actor, err := callerOption(ctx)
+	if err != nil {
+		return "", "", err
+	}
+
+	var rows []joinRow
+	if err := r.client.RPC(ctx, "join_room",
+		map[string]any{"p_room": roomID}, &rows, actor); err != nil {
+		return "", "", translateRoom(err)
+	}
+	if len(rows) == 0 {
+		return "", "", room.ErrNotFound
+	}
+
+	return room.Role(rows[0].Role), deref(rows[0].SFURoomID), nil
+}
+
+// Leave memanggil fungsi leave_room.
+func (r *RoomRepository) Leave(ctx context.Context, roomID string) error {
+	actor, err := callerOption(ctx)
+	if err != nil {
+		return err
+	}
+
+	if err := r.client.RPC(ctx, "leave_room",
+		map[string]any{"p_room": roomID}, nil, actor); err != nil {
+		return translateRoom(err)
+	}
+	return nil
+}
+
+// ListParticipants memanggil fungsi list_room_participants.
+func (r *RoomRepository) ListParticipants(ctx context.Context, roomID string) ([]room.Participant, error) {
+	actor, err := callerOption(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var rows []participantRow
+	if err := r.client.RPC(ctx, "list_room_participants",
+		map[string]any{"p_room": roomID}, &rows, actor); err != nil {
+		return nil, translateRoom(err)
+	}
+
+	out := make([]room.Participant, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, room.Participant{
+			UserID:      row.UserID,
+			Username:    row.Username,
+			DisplayName: row.DisplayName,
+			AvatarID:    deref(row.Avatar),
+			Role:        room.Role(row.Role),
+			IsMuted:     row.IsMuted,
+			JoinedAt:    row.JoinedAt,
+		})
+	}
+	return out, nil
+}
+
+// SetRole memanggil fungsi set_room_role.
+func (r *RoomRepository) SetRole(ctx context.Context, roomID, targetID string, role room.Role) error {
+	actor, err := callerOption(ctx)
+	if err != nil {
+		return err
+	}
+
+	args := map[string]any{
+		"p_room":   roomID,
+		"p_target": targetID,
+		"p_role":   string(role),
+	}
+
+	if err := r.client.RPC(ctx, "set_room_role", args, nil, actor); err != nil {
+		return translateRoom(err)
+	}
+	return nil
+}
+
+// RequestSpeak memanggil fungsi request_speak.
+func (r *RoomRepository) RequestSpeak(ctx context.Context, roomID string) error {
+	actor, err := callerOption(ctx)
+	if err != nil {
+		return err
+	}
+
+	if err := r.client.RPC(ctx, "request_speak",
+		map[string]any{"p_room": roomID}, nil, actor); err != nil {
+		return translateRoom(err)
+	}
+	return nil
+}
+
+// SetMuted memanggil fungsi set_room_muted.
+func (r *RoomRepository) SetMuted(ctx context.Context, roomID string, muted bool) error {
+	actor, err := callerOption(ctx)
+	if err != nil {
+		return err
+	}
+
+	args := map[string]any{"p_room": roomID, "p_muted": muted}
+
+	if err := r.client.RPC(ctx, "set_room_muted", args, nil, actor); err != nil {
+		return translateRoom(err)
+	}
+	return nil
+}
+
+func translateRoom(err error) error {
+	var apiErr *sb.APIError
+	if !errors.As(err, &apiErr) {
+		return err
+	}
+
+	switch {
+	case apiErr.Code == sqlstateRoomFull:
+		return room.ErrFull
+	case apiErr.Code == sqlstateNotMember, apiErr.IsDeniedByRLS():
+		return room.ErrNotAllowed
+	case apiErr.Code == sqlstateNotFound, apiErr.IsNotFound():
+		return room.ErrNotFound
+	case apiErr.Code == sqlstateInvalidData:
+		return room.ErrInvalidInput
+	default:
+		return err
+	}
+}

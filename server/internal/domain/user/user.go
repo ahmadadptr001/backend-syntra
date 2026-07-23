@@ -1,0 +1,153 @@
+// Package user adalah direktori pengguna dan graf pertemanan.
+//
+// Dipakai untuk menukar hasil scan QR menjadi profil, memulai percakapan, dan
+// mengelola siapa yang diikuti. Sengaja terpisah dari autentikasi: package
+// internal/auth mengurus siapa pemanggilnya, package ini mengurus orang lain.
+package user
+
+import (
+	"context"
+	"errors"
+	"strings"
+	"time"
+)
+
+var (
+	ErrNotFound     = errors.New("user: pengguna tidak ditemukan")
+	ErrInvalidInput = errors.New("user: input tidak valid")
+	ErrNotAllowed   = errors.New("user: tindakan tidak diizinkan")
+	ErrSelfFollow   = errors.New("user: tidak bisa mengikuti diri sendiri")
+)
+
+// MaxUsernameLength membatasi panjang username yang diterima.
+const MaxUsernameLength = 32
+
+// FollowStatus adalah keadaan hubungan mengikuti.
+//
+// FollowNone bernilai string kosong dengan sengaja: itu keadaan bawaan, dan
+// tidak perlu baris di tabel untuk mewakilinya.
+type FollowStatus string
+
+const (
+	FollowNone     FollowStatus = ""
+	FollowPending  FollowStatus = "pending"
+	FollowAccepted FollowStatus = "accepted"
+)
+
+// Profile adalah informasi publik seorang pengguna.
+//
+// Hanya berisi yang aman dilihat siapa saja. Email, nomor telepon, dan tanggal
+// lahir sengaja tidak ada di sini — kalau nanti dibutuhkan untuk layar
+// pengaturan, buatkan tipe terpisah untuk profil milik sendiri.
+type Profile struct {
+	ID            string
+	Username      string
+	DisplayName   string
+	AvatarMediaID string
+
+	FollowerCount  int
+	FollowingCount int
+
+	// FollowStatus dinilai dari sudut pandang pemanggil, bukan sifat profil
+	// itu sendiri. Klien memakainya untuk memutuskan tombolnya "Follow",
+	// "Requested", atau "Following".
+	FollowStatus FollowStatus
+	IsSelf       bool
+
+	FollowedAt time.Time
+}
+
+// Repository adalah port penyimpanan.
+type Repository interface {
+	FindByUsername(ctx context.Context, username string) (Profile, error)
+	Follow(ctx context.Context, targetID string) (FollowStatus, error)
+	Unfollow(ctx context.Context, targetID string) error
+	ListFollowing(ctx context.Context) ([]Profile, error)
+}
+
+// Service memuat alur bisnis direktori pengguna.
+type Service struct {
+	repo Repository
+}
+
+// NewService merangkai service.
+func NewService(repo Repository) *Service {
+	return &Service{repo: repo}
+}
+
+// FindByUsername mencari profil berdasarkan username.
+//
+// Username disimpan sebagai citext di database, jadi pencarian tidak
+// membedakan huruf besar-kecil — hasil scan QR tidak perlu dinormalkan klien.
+func (s *Service) FindByUsername(ctx context.Context, username string) (Profile, error) {
+	username, err := normalize(username)
+	if err != nil {
+		return Profile{}, err
+	}
+	return s.repo.FindByUsername(ctx, username)
+}
+
+// Follow mulai mengikuti seseorang berdasarkan username.
+//
+// Mengembalikan status hasilnya: `accepted` untuk akun publik, `pending` untuk
+// akun privat yang masih harus menyetujui. Idempoten — memanggilnya lagi
+// mengembalikan status yang sedang berlaku tanpa menggandakan apa pun.
+func (s *Service) Follow(ctx context.Context, username string) (Profile, error) {
+	profile, err := s.FindByUsername(ctx, username)
+	if err != nil {
+		return Profile{}, err
+	}
+	if profile.IsSelf {
+		return Profile{}, ErrSelfFollow
+	}
+
+	status, err := s.repo.Follow(ctx, profile.ID)
+	if err != nil {
+		return Profile{}, err
+	}
+
+	profile.FollowStatus = status
+	if status == FollowAccepted {
+		profile.FollowerCount++
+	}
+	return profile, nil
+}
+
+// Unfollow berhenti mengikuti seseorang. Idempoten.
+func (s *Service) Unfollow(ctx context.Context, username string) (Profile, error) {
+	profile, err := s.FindByUsername(ctx, username)
+	if err != nil {
+		return Profile{}, err
+	}
+	if profile.IsSelf {
+		return Profile{}, ErrSelfFollow
+	}
+
+	if err := s.repo.Unfollow(ctx, profile.ID); err != nil {
+		return Profile{}, err
+	}
+
+	if profile.FollowStatus == FollowAccepted && profile.FollowerCount > 0 {
+		profile.FollowerCount--
+	}
+	profile.FollowStatus = FollowNone
+	return profile, nil
+}
+
+// ListFollowing mengembalikan orang-orang yang diikuti pemanggil.
+//
+// Ini juga alat diagnosis: kalau story seseorang tidak muncul di story row,
+// yang pertama diperiksa adalah apakah ia ada di daftar ini dengan status
+// `accepted` — sebab list_stories menyaring berdasarkan itu.
+func (s *Service) ListFollowing(ctx context.Context) ([]Profile, error) {
+	return s.repo.ListFollowing(ctx)
+}
+
+func normalize(username string) (string, error) {
+	username = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(username), "@"))
+
+	if username == "" || len(username) > MaxUsernameLength {
+		return "", ErrInvalidInput
+	}
+	return username, nil
+}

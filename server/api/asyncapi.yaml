@@ -1,0 +1,192 @@
+asyncapi: 3.0.0
+
+info:
+  title: Syntra Realtime API
+  version: 0.1.0
+  description: |
+    Kontrak WebSocket Syntra. Sumber kebenaran implementasinya ada di
+    internal/transport/ws/protocol.
+
+    Autentikasi dilakukan saat handshake HTTP, bukan lewat frame.
+    Kirim `Authorization: Bearer <token>` (klien native) atau `?token=<token>`
+    (browser, karena WebSocket API tidak bisa menyetel header).
+
+    Semua frame memakai amplop yang sama:
+
+      {"type": "...", "ref": "...", "data": {...}, "error": {...}, "ts": 0}
+
+    `ref` ditentukan klien dan dikembalikan apa adanya pada ack/error, supaya
+    pesan optimistik di UI bisa dicocokkan dengan balasan server.
+
+    Heartbeat memakai ping/pong level protokol WebSocket, bukan frame aplikasi.
+    Server mengirim ping tiap WS_PING_INTERVAL dan memutus koneksi yang tidak
+    membalas dalam WS_PONG_WAIT.
+
+servers:
+  local:
+    host: localhost:8080
+    pathname: /api/v1/ws
+    protocol: ws
+
+channels:
+  socket:
+    address: /api/v1/ws
+    messages:
+      # klien -> server
+      subscribe:      { $ref: '#/components/messages/Subscribe' }
+      unsubscribe:    { $ref: '#/components/messages/Unsubscribe' }
+      messageSend:    { $ref: '#/components/messages/MessageSend' }
+      messageRead:    { $ref: '#/components/messages/MessageRead' }
+      typingStart:    { $ref: '#/components/messages/Typing' }
+      # server -> klien
+      ready:          { $ref: '#/components/messages/Ready' }
+      ack:            { $ref: '#/components/messages/Ack' }
+      error:          { $ref: '#/components/messages/Error' }
+      messageNew:     { $ref: '#/components/messages/MessageNew' }
+
+operations:
+  send:
+    action: send
+    channel: { $ref: '#/channels/socket' }
+    messages:
+      - { $ref: '#/channels/socket/messages/subscribe' }
+      - { $ref: '#/channels/socket/messages/unsubscribe' }
+      - { $ref: '#/channels/socket/messages/messageSend' }
+      - { $ref: '#/channels/socket/messages/messageRead' }
+      - { $ref: '#/channels/socket/messages/typingStart' }
+
+  receive:
+    action: receive
+    channel: { $ref: '#/channels/socket' }
+    messages:
+      - { $ref: '#/channels/socket/messages/ready' }
+      - { $ref: '#/channels/socket/messages/ack' }
+      - { $ref: '#/channels/socket/messages/error' }
+      - { $ref: '#/channels/socket/messages/messageNew' }
+
+components:
+  messages:
+    Subscribe:
+      summary: |
+        Berlangganan topik. Server memeriksa hak akses per topik: kanal
+        `user:` hanya boleh untuk diri sendiri, `conversation:` hanya untuk
+        anggota. Permintaan yang ditolak membalas error `forbidden`.
+      payload:
+        type: object
+        required: [type, data]
+        properties:
+          type: { const: subscribe }
+          ref:  { type: string }
+          data:
+            type: object
+            required: [topics]
+            properties:
+              topics:
+                type: array
+                maxItems: 50
+                items:
+                  type: string
+                  examples: ['conversation:0192f3a1-...', 'user:0192f3a0-...']
+
+    Unsubscribe:
+      payload:
+        type: object
+        properties:
+          type: { const: unsubscribe }
+          ref:  { type: string }
+          data:
+            type: object
+            properties:
+              topics: { type: array, items: { type: string } }
+
+    MessageSend:
+      payload:
+        type: object
+        properties:
+          type: { const: message.send }
+          ref:  { type: string, description: id sementara dari klien }
+          data:
+            type: object
+            required: [conversation_id]
+            properties:
+              conversation_id: { type: string, format: uuid }
+              type:            { type: string, enum: [text, media, voice_note, story_reply] }
+              body:            { type: string, maxLength: 4000 }
+              reply_to_id:     { type: string, format: uuid }
+
+    MessageRead:
+      payload:
+        type: object
+        properties:
+          type: { const: message.read }
+          data:
+            type: object
+            required: [conversation_id, message_id]
+            properties:
+              conversation_id: { type: string, format: uuid }
+              message_id:      { type: string, format: uuid }
+
+    Typing:
+      payload:
+        type: object
+        properties:
+          type: { type: string, enum: [typing.start, typing.stop] }
+          data:
+            type: object
+            required: [conversation_id]
+            properties:
+              conversation_id: { type: string, format: uuid }
+
+    Ready:
+      summary: Frame pertama dari server setelah koneksi berhasil.
+      payload:
+        type: object
+        properties:
+          type: { const: ready }
+          data:
+            type: object
+            properties:
+              client_id:             { type: string }
+              user_id:               { type: string }
+              heartbeat_interval_ms: { type: integer }
+              max_frame_bytes:       { type: integer }
+
+    Ack:
+      payload:
+        type: object
+        properties:
+          type: { const: ack }
+          ref:  { type: string }
+          data: { type: object }
+
+    Error:
+      payload:
+        type: object
+        properties:
+          type: { const: error }
+          ref:  { type: string }
+          error:
+            type: object
+            properties:
+              code:
+                type: string
+                enum: [bad_request, unauthorized, forbidden, not_found, rate_limited, unknown_type, internal]
+              message: { type: string }
+
+    MessageNew:
+      summary: Pesan baru pada topik percakapan yang sedang dilanggan.
+      payload:
+        type: object
+        properties:
+          type: { const: message.new }
+          ts:   { type: integer }
+          data:
+            type: object
+            properties:
+              id:              { type: string, format: uuid }
+              conversation_id: { type: string, format: uuid }
+              sender_id:       { type: string, format: uuid }
+              type:            { type: string }
+              body:            { type: string }
+              reply_to_id:     { type: string, format: uuid }
+              created_at:      { type: string, format: date-time }

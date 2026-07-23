@@ -1,0 +1,64 @@
+# Caddy sebagai reverse proxy + TLS otomatis.
+#
+# Berbeda dari nginx di deployments/nginx/ (yang dipakai untuk menjalankan di
+# laptop), berkas ini untuk VPS. Alasan memilih Caddy di sana: sertifikat
+# Let's Encrypt diterbitkan dan diperpanjang sendiri, tanpa certbot, tanpa
+# cron, dan tanpa berkas konfigurasi tambahan.
+#
+# Domain diambil dari environment SYNTRA_DOMAIN.
+
+{$SYNTRA_DOMAIN} {
+	encode zstd gzip
+
+	header {
+		-Server
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy no-referrer
+
+		# HSTS. Baru boleh dinyalakan setelah yakin domain ini akan selalu
+		# memakai HTTPS — browser mengingatnya, dan salah pasang berarti situs
+		# tidak bisa diakses sampai masa berlakunya habis.
+		# Strict-Transport-Security "max-age=31536000; includeSubDomains"
+	}
+
+	# WebSocket. Caddy mengenali upgrade secara otomatis, jadi tidak perlu
+	# padanan blok `map $http_upgrade` seperti di nginx. Yang tetap harus
+	# diatur adalah batas waktunya: bawaan Caddy memutus koneksi menganggur,
+	# dan koneksi chat memang sering menganggur berjam-jam.
+	handle /api/v1/ws* {
+		reverse_proxy server:8080 {
+			transport http {
+				read_timeout  1h
+				write_timeout 1h
+			}
+		}
+	}
+
+	# Probe kesehatan tidak perlu ikut memenuhi log.
+	handle /healthz {
+		reverse_proxy server:8080
+	}
+
+	handle /readyz {
+		reverse_proxy server:8080
+	}
+
+	handle {
+		reverse_proxy server:8080 {
+			header_up X-Real-IP {remote_host}
+		}
+	}
+
+	log {
+		output stdout
+		format json
+	}
+}
+
+# Catatan: Caddy tidak punya rate limiting bawaan — berbeda dari nginx.conf
+# yang membatasi 10 r/s. Sampai rate limiting ditambahkan di aplikasi (lihat
+# docs/api.md §8), tutupi celah itu dengan salah satu dari:
+#   - taruh Cloudflare di depan domain ini, atau
+#   - pakai build Caddy dengan plugin caddy-ratelimit, atau
+#   - pakai nginx.conf yang sudah ada, dan biarkan Caddy hanya mengurus TLS.

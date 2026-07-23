@@ -1,0 +1,56 @@
+# Lingkungan pengembangan lokal.
+#
+# Tidak ada Postgres di sini. Basis data proyek ini adalah Supabase online, dan
+# aplikasi menghubunginya lewat HTTPS memakai SUPABASE_URL + SUPABASE_ANON_KEY —
+# bukan koneksi database langsung.
+#
+# Yang perlu dijalankan lokal hanya Redis, karena Supabase tidak menyediakannya
+# dan lapisan realtime bergantung padanya untuk fanout antar-instance.
+
+services:
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "no"]
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  server:
+    build:
+      context: ..
+      dockerfile: deployments/Dockerfile
+    env_file:
+      - ../.env
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      HTTP_ADDR: ":8080"
+    ports:
+      - "8080:8080"
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  # Menjalankan dua instance sekaligus. Ini bukan hiasan: bug fanout antar
+  # instance tidak akan pernah muncul kalau pengembangan selalu dilakukan
+  # dengan satu proses. Arahkan klien A ke :8080 dan klien B ke :8081, lalu
+  # pastikan pesan tetap sampai.
+  server-replica:
+    build:
+      context: ..
+      dockerfile: deployments/Dockerfile
+    env_file:
+      - ../.env
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      HTTP_ADDR: ":8080"
+    ports:
+      - "8081:8080"
+    depends_on:
+      redis:
+        condition: service_healthy
+    profiles:
+      - cluster
