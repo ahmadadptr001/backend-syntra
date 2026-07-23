@@ -12,17 +12,28 @@ import (
 )
 
 // New membuat logger sesuai level dan format yang diminta.
-// format "json" untuk production (mudah di-ingest), "text" untuk lokal.
+//
+// Tiga format, masing-masing untuk keperluan berbeda:
+//
+//	pretty  ringkas dan berwarna — untuk dipantau langsung di terminal
+//	text    key=value bawaan slog — lengkap, tapi satu baris sering terlipat
+//	json    untuk produksi; dibaca mesin, bukan manusia
 func New(level, format string) *slog.Logger {
-	opts := &slog.HandlerOptions{
-		Level: parseLevel(level),
-	}
+	opts := &slog.HandlerOptions{Level: parseLevel(level)}
 
 	var handler slog.Handler
-	if strings.EqualFold(format, "json") {
+	switch strings.ToLower(strings.TrimSpace(format)) {
+	case "json":
 		handler = slog.NewJSONHandler(os.Stdout, opts)
-	} else {
+
+	case "text":
 		handler = slog.NewTextHandler(os.Stdout, opts)
+
+	default: // "pretty" dan nilai tak dikenal
+		// Warna hanya dinyalakan kalau keluaran benar-benar ke terminal.
+		// Saat diarahkan ke berkas — dan start.ps1 memang melakukannya —
+		// kode ANSI akan tampil sebagai sampah seperti "ESC[2m".
+		handler = newPrettyHandler(os.Stdout, opts.Level, isTerminal(os.Stdout))
 	}
 
 	return slog.New(handler)
@@ -39,4 +50,17 @@ func parseLevel(level string) slog.Level {
 	default:
 		return slog.LevelInfo
 	}
+}
+
+// isTerminal menebak apakah keluaran mengarah ke terminal.
+//
+// Berkas biasa punya mode ModeType nol; pipe, dan character device seperti
+// konsol, tidak. Pemeriksaan ini cukup untuk keperluan di sini dan menghindari
+// satu dependensi hanya demi mendeteksi TTY.
+func isTerminal(f *os.File) bool {
+	info, err := f.Stat()
+	if err != nil {
+		return false
+	}
+	return info.Mode()&os.ModeCharDevice != 0
 }

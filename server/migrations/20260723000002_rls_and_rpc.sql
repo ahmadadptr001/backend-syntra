@@ -16,7 +16,7 @@ BEGIN;
 -- 1. HELPER
 -- ============================================================
 
--- Memeriksa keanggotaan percakapan untuk pengguna yang sedang login.
+-- Memeriksa keanggotaan percakapxan untuk pengguna yang sedang login.
 --
 -- SECURITY DEFINER di sini bukan sekadar kenyamanan, tapi keharusan:
 -- fungsi ini dipakai di dalam policy tabel conversation_members sendiri.

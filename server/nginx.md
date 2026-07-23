@@ -53,7 +53,16 @@ level=INFO msg="server berjalan" addr=:8080 ws_path=/api/v1/ws env=production ..
 Perhatikan `env_file` di baris itu — memastikan `.env` yang terbaca memang yang kamu kira.
 
 > Jendela ini harus tetap terbuka. Menutupnya = server mati.
-> Untuk latar belakang: `Start-Process .\bin\syntra.exe -WindowStyle Hidden`
+>
+> Untuk latar belakang, **sertakan redirect log** — tanpa itu seluruh log hilang
+> dan tidak ada yang bisa dibaca saat terjadi masalah:
+>
+> ```powershell
+> Start-Process .\bin\syntra.exe -WorkingDirectory (Get-Location) -WindowStyle Hidden `
+>   -RedirectStandardOutput logs\backend.log -RedirectStandardError logs\backend.err.log
+> ```
+>
+> Lebih praktis: pakai `start.ps1` di bagian 4, yang sudah melakukannya.
 
 ## 2. Nyalakan nginx
 
@@ -107,30 +116,106 @@ Token berlaku 1 jam.
 
 ---
 
-## 4. Skrip sekali jalan
+## 4. Skrip sekali jalan — `start.ps1`
 
-Simpan sebagai `server/start.ps1`:
+Sudah tersedia di `server/start.ps1`. Ia menyalakan Memurai, server Go, dan
+nginx sekaligus, lalu memverifikasi `/readyz`.
 
 ```powershell
-$root  = "C:\Users\user\Documents\PROJECTS\backend-syntra\server"
-$nginx = "$root\deployments\nginx"
-
-if ((Get-Service Memurai).Status -ne 'Running') { Start-Service Memurai }
-
-# Hentikan server lama dulu supaya port 8080 tidak bentrok
-Get-Process syntra -ErrorAction SilentlyContinue | Stop-Process -Force
-Start-Process "$root\bin\syntra.exe" -WorkingDirectory $root -WindowStyle Hidden
-
-if (-not (Get-Process nginx -ErrorAction SilentlyContinue)) {
-    Start-Process nginx -ArgumentList "-p",".","-c","nginx.conf" -WorkingDirectory $nginx -WindowStyle Hidden
-}
-
-Start-Sleep -Seconds 4
-curl.exe -s http://localhost:8081/readyz
+cd C:\Users\user\Documents\PROJECTS\backend-syntra\server
+powershell -ExecutionPolicy Bypass -File .\start.ps1
 ```
 
-Jalankan: `powershell -ExecutionPolicy Bypass -File .\start.ps1`
+Skrip ini juga **mengarahkan log ke berkas**. Tanpa itu, proses yang berjalan
+tersembunyi membuang seluruh log-nya ke ruang hampa, dan saat ada yang salah
+tidak ada apa pun untuk dibaca:
 
+| Berkas | Isi |
+|---|---|
+| `logs\backend.log` | stdout server Go (log terstruktur) |
+| `logs\backend.err.log` | stderr (panic, kegagalan fatal) |
+| `deployments\nginx\logs\access.log` | akses nginx |
+| `deployments\nginx\logs\error.log` | error nginx |
+
+---
+
+## 4b. Restart
+
+### Restart semuanya — cara biasa
+
+`start.ps1` **aman dijalankan berulang kali**: ia menghentikan server lama lebih
+dulu, jadi tidak akan bentrok di port 8080.
+
+```powershell
+cd C:\Users\user\Documents\PROJECTS\backend-syntra\server
+powershell -ExecutionPolicy Bypass -File .\start.ps1
+```
+
+Berhasil kalau muncul `{"redis":"ok","supabase":"ok","ready":true}`.
+
+### Restart server Go saja
+
+Yang paling sering dibutuhkan — setelah mengubah kode atau `.env`:
+
+```powershell
+cd C:\Users\user\Documents\PROJECTS\backend-syntra\server
+
+go build -o bin\syntra.exe .\cmd\syntra          # kalau kode berubah
+Get-Process syntra -ErrorAction SilentlyContinue | Stop-Process -Force
+Start-Process .\bin\syntra.exe -WorkingDirectory (Get-Location) -WindowStyle Hidden `
+  -RedirectStandardOutput logs\backend.log -RedirectStandardError logs\backend.err.log
+```
+
+nginx tidak perlu disentuh — ia hanya meneruskan trafik, jadi backend yang
+berganti proses tetap dilayani.
+
+> **Perubahan `.env` hanya terbaca saat startup.** Mengeditnya tanpa restart
+> tidak berpengaruh sama sekali.
+
+### Reload nginx saja
+
+Setelah mengubah `nginx.conf`. Pakai `reload`, bukan restart — koneksi yang
+sedang berjalan tidak terputus:
+
+```powershell
+cd C:\Users\user\Documents\PROJECTS\backend-syntra\server\deployments\nginx
+nginx -p . -c nginx.conf -t        # uji dulu
+nginx -p . -c nginx.conf -s reload
+```
+
+Jangan lewati `-t`. Reload dengan konfigurasi rusak akan ditolak dan nginx tetap
+memakai yang lama — tetapi kalau nginx sempat berhenti, ia tidak akan bisa
+menyala lagi sampai konfigurasinya benar.
+
+### Memaksa berhenti kalau macet
+
+```powershell
+Get-Process syntra,nginx -ErrorAction SilentlyContinue | Stop-Process -Force
+```
+
+Lalu jalankan `start.ps1`. Cara ini melewati graceful shutdown, jadi koneksi
+WebSocket yang sedang aktif diputus tanpa pemberitahuan — pakai hanya kalau
+cara normal gagal.
+
+### Memastikan restart benar-benar terjadi
+
+```powershell
+Get-Process syntra,nginx | Select-Object Id,ProcessName,StartTime
+```
+
+Periksa `StartTime`. Kalau masih menunjukkan waktu lama, prosesnya belum
+berganti — dan server lama yang masih hidup akan diam-diam terus melayani
+permintaan dengan kode serta konfigurasi lama. Ini pemeriksaan yang paling
+sering terlewat.
+
+Cek juga baris awal log:
+
+```powershell
+Get-Content logs\backend.log | Select-Object -First 5
+```
+
+`env_file` pada baris `server berjalan` menunjukkan `.env` mana yang terbaca —
+berguna saat nilai konfigurasi ternyata bukan yang kamu kira.
 ---
 
 ## 5. Membuka akses dari luar
@@ -254,6 +339,9 @@ Get-Process syntra -ErrorAction SilentlyContinue | Stop-Process -Force
 
 Memurai biarkan saja — ia service dan tidak mengganggu.
 
+Untuk **restart**, bukan mematikan, lihat bagian 4b — `start.ps1` sudah
+menangani penghentian proses lama sendiri.
+
 Kalau ingin menutup akses dari internet tanpa mematikan apa pun: hapus aturan
 port forwarding di router. Itu satu-satunya pintu dari luar.
 
@@ -263,7 +351,9 @@ port forwarding di router. Itu satu-satunya pintu dari luar.
 
 | Gejala | Penyebab | Solusi |
 |---|---|---|
-| `bind: Only one usage of each socket address` | server lama masih jalan | `Get-Process syntra \| Stop-Process -Force` |
+| `bind: Only one usage of each socket address` | server lama masih jalan | `Get-Process syntra \| Stop-Process -Force`, lalu `start.ps1` |
+| Perubahan kode/`.env` tidak berpengaruh | proses lama masih melayani | cek `StartTime` — lihat bagian 4b |
+| `logs\backend.log` kosong | dijalankan tanpa redirect | pakai `start.ps1`, atau sertakan `-RedirectStandardOutput` |
 | nginx: `could not open error log file` | folder `logs/` belum ada | `New-Item -ItemType Directory logs` di folder nginx |
 | `502` dari nginx | server Go tidak jalan di :8080 | ulangi langkah 1 |
 | `503` di `/readyz` | Supabase atau Redis tidak tersambung | lihat isi `dependencies` di respons |
