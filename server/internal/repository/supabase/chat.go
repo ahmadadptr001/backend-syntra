@@ -16,6 +16,7 @@ import (
 	"context"
 	"errors"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/ahmadadptr001/backend-syntra/internal/auth"
@@ -118,6 +119,7 @@ type messageRow struct {
 	CreatedAt      time.Time  `json:"created_at"`
 	EditedAt       *time.Time `json:"edited_at"`
 	IsDeleted      bool       `json:"is_deleted"`
+	Attachments    *string    `json:"attachments"`
 }
 
 // ListMessages memanggil fungsi get_messages.
@@ -150,6 +152,7 @@ func (r *ChatRepository) ListMessages(ctx context.Context, conversationID, userI
 			CreatedAt:      row.CreatedAt,
 			EditedAt:       row.EditedAt,
 			IsDeleted:      row.IsDeleted,
+			AttachmentKeys: splitCSV(deref(row.Attachments)),
 		})
 	}
 	return out, nil
@@ -281,6 +284,13 @@ func (r *ChatRepository) InsertMessage(ctx context.Context, msg chat.Message) er
 		"p_reply_to":     nullIfEmpty(msg.ReplyToID),
 		"p_created_at":   msg.CreatedAt.UTC(),
 	}
+	// p_media hanya disertakan saat ada lampiran. Tanpa ini, pesan teks biasa
+	// memanggil send_message dengan 6 argumen — cocok dengan versi lama fungsi —
+	// sehingga pengiriman pesan tetap jalan walau migrasi lampiran belum
+	// dijalankan. Media adalah fitur baru yang memang butuh migrasi tersebut.
+	if len(msg.MediaIDs) > 0 {
+		args["p_media"] = msg.MediaIDs
+	}
 
 	if err := r.client.RPC(ctx, "send_message", args, nil, actor); err != nil {
 		return translate(err)
@@ -321,6 +331,190 @@ func actorOption(ctx context.Context, userID string) (sb.Option, error) {
 		return nil, ErrIdentityMismatch
 	}
 	return sb.WithToken(principal.Token), nil
+}
+
+// --- Manajemen grup, reaksi, bisu (migrasi 14) ---
+
+type convDetailRow struct {
+	ID          string    `json:"id"`
+	Type        string    `json:"type"`
+	Title       string    `json:"title"`
+	AvatarKey   string    `json:"avatar_key"`
+	CreatedBy   *string   `json:"created_by"`
+	MyRole      string    `json:"my_role"`
+	IsMuted     bool      `json:"is_muted"`
+	MemberCount int       `json:"member_count"`
+	CreatedAt   time.Time `json:"created_at"`
+}
+
+func (r *ChatRepository) GetConversation(ctx context.Context, conversationID, userID string) (chat.ConversationDetail, error) {
+	actor, err := actorOption(ctx, userID)
+	if err != nil {
+		return chat.ConversationDetail{}, err
+	}
+	var rows []convDetailRow
+	if err := r.client.RPC(ctx, "get_conversation", map[string]any{"p_conversation": conversationID}, &rows, actor); err != nil {
+		return chat.ConversationDetail{}, translate(err)
+	}
+	if len(rows) == 0 {
+		return chat.ConversationDetail{}, chat.ErrNotFound
+	}
+	row := rows[0]
+	return chat.ConversationDetail{
+		ID: row.ID, Type: chat.ConversationType(row.Type), Title: row.Title,
+		AvatarKey: row.AvatarKey, CreatedBy: deref(row.CreatedBy), MyRole: row.MyRole,
+		IsMuted: row.IsMuted, MemberCount: row.MemberCount, CreatedAt: row.CreatedAt,
+	}, nil
+}
+
+type memberRow struct {
+	UserID      string    `json:"user_id"`
+	Username    string    `json:"username"`
+	DisplayName string    `json:"display_name"`
+	AvatarKey   string    `json:"avatar_key"`
+	Role        string    `json:"role"`
+	JoinedAt    time.Time `json:"joined_at"`
+}
+
+func (r *ChatRepository) ListMembers(ctx context.Context, conversationID, userID string) ([]chat.Member, error) {
+	actor, err := actorOption(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	var rows []memberRow
+	if err := r.client.RPC(ctx, "list_conversation_members", map[string]any{"p_conversation": conversationID}, &rows, actor); err != nil {
+		return nil, translate(err)
+	}
+	out := make([]chat.Member, 0, len(rows))
+	for _, m := range rows {
+		out = append(out, chat.Member{
+			UserID: m.UserID, Username: m.Username, DisplayName: m.DisplayName,
+			AvatarKey: m.AvatarKey, Role: m.Role, JoinedAt: m.JoinedAt,
+		})
+	}
+	return out, nil
+}
+
+func (r *ChatRepository) AddMembers(ctx context.Context, conversationID, userID string, memberIDs []string) (int, error) {
+	actor, err := actorOption(ctx, userID)
+	if err != nil {
+		return 0, err
+	}
+	if memberIDs == nil {
+		memberIDs = []string{}
+	}
+	var added int
+	if err := r.client.RPC(ctx, "add_group_members", map[string]any{"p_conversation": conversationID, "p_members": memberIDs}, &added, actor); err != nil {
+		return 0, translate(err)
+	}
+	return added, nil
+}
+
+func (r *ChatRepository) RemoveMember(ctx context.Context, conversationID, userID, memberID string) error {
+	actor, err := actorOption(ctx, userID)
+	if err != nil {
+		return err
+	}
+	if err := r.client.RPC(ctx, "remove_group_member", map[string]any{"p_conversation": conversationID, "p_member": memberID}, nil, actor); err != nil {
+		return translate(err)
+	}
+	return nil
+}
+
+func (r *ChatRepository) Leave(ctx context.Context, conversationID, userID string) error {
+	actor, err := actorOption(ctx, userID)
+	if err != nil {
+		return err
+	}
+	if err := r.client.RPC(ctx, "leave_conversation", map[string]any{"p_conversation": conversationID}, nil, actor); err != nil {
+		return translate(err)
+	}
+	return nil
+}
+
+func (r *ChatRepository) UpdateGroup(ctx context.Context, conversationID, userID, title, avatarMediaID string) error {
+	actor, err := actorOption(ctx, userID)
+	if err != nil {
+		return err
+	}
+	args := map[string]any{"p_conversation": conversationID, "p_title": nullIfEmpty(title), "p_avatar_media": nullIfEmpty(avatarMediaID)}
+	if err := r.client.RPC(ctx, "update_group", args, nil, actor); err != nil {
+		return translate(err)
+	}
+	return nil
+}
+
+func (r *ChatRepository) SetMemberRole(ctx context.Context, conversationID, userID, memberID, role string) error {
+	actor, err := actorOption(ctx, userID)
+	if err != nil {
+		return err
+	}
+	args := map[string]any{"p_conversation": conversationID, "p_member": memberID, "p_role": role}
+	if err := r.client.RPC(ctx, "set_member_role", args, nil, actor); err != nil {
+		return translate(err)
+	}
+	return nil
+}
+
+func (r *ChatRepository) Mute(ctx context.Context, conversationID, userID string, until *time.Time) error {
+	actor, err := actorOption(ctx, userID)
+	if err != nil {
+		return err
+	}
+	var untilArg any
+	if until != nil {
+		untilArg = until.UTC()
+	}
+	args := map[string]any{"p_conversation": conversationID, "p_until": untilArg}
+	if err := r.client.RPC(ctx, "mute_conversation", args, nil, actor); err != nil {
+		return translate(err)
+	}
+	return nil
+}
+
+func (r *ChatRepository) React(ctx context.Context, messageID, userID, emoji string) error {
+	actor, err := actorOption(ctx, userID)
+	if err != nil {
+		return err
+	}
+	args := map[string]any{"p_message": messageID, "p_emoji": nullIfEmpty(emoji)}
+	if err := r.client.RPC(ctx, "react_to_message", args, nil, actor); err != nil {
+		return translate(err)
+	}
+	return nil
+}
+
+type reactionRow struct {
+	MessageID string `json:"message_id"`
+	UserID    string `json:"user_id"`
+	Emoji     string `json:"emoji"`
+}
+
+func (r *ChatRepository) ListReactions(ctx context.Context, userID string, messageIDs []string) ([]chat.Reaction, error) {
+	actor, err := actorOption(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	if messageIDs == nil {
+		messageIDs = []string{}
+	}
+	var rows []reactionRow
+	if err := r.client.RPC(ctx, "list_reactions", map[string]any{"p_message_ids": messageIDs}, &rows, actor); err != nil {
+		return nil, translate(err)
+	}
+	out := make([]chat.Reaction, 0, len(rows))
+	for _, x := range rows {
+		out = append(out, chat.Reaction{MessageID: x.MessageID, UserID: x.UserID, Emoji: x.Emoji})
+	}
+	return out, nil
+}
+
+// splitCSV memecah storage key gabungan dari get_messages menjadi daftar.
+func splitCSV(s string) []string {
+	if s == "" {
+		return nil
+	}
+	return strings.Split(s, ",")
 }
 
 // translate memetakan kegagalan Supabase ke error domain.

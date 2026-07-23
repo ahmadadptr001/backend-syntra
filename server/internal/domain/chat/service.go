@@ -116,6 +116,10 @@ type SendMessageInput struct {
 	Type           MessageType
 	Body           string
 	ReplyToID      string
+
+	// MediaIDs adalah lampiran — foto, voice note, dsb. Media harus sudah
+	// dikonfirmasi lebih dulu dan milik pengirim.
+	MediaIDs []string
 }
 
 // SendMessage memvalidasi, menyimpan, lalu menyiarkan pesan.
@@ -129,13 +133,19 @@ func (s *Service) SendMessage(ctx context.Context, in SendMessageInput) (Message
 	}
 
 	in.Body = strings.TrimSpace(in.Body)
-	if in.Type == MessageText {
+
+	// Pesan teks tanpa lampiran wajib berisi. Pesan dengan lampiran boleh
+	// tanpa teks — kiriman foto polos, misalnya.
+	if in.Type == MessageText && len(in.MediaIDs) == 0 {
 		if in.Body == "" {
 			return Message{}, ErrEmptyBody
 		}
-		if utf8.RuneCountInString(in.Body) > MaxBodyLength {
-			return Message{}, ErrBodyTooLong
-		}
+	}
+	if utf8.RuneCountInString(in.Body) > MaxBodyLength {
+		return Message{}, ErrBodyTooLong
+	}
+	if len(in.MediaIDs) > MaxAttachments {
+		return Message{}, ErrInvalidInput
 	}
 
 	// Otorisasi ada di service, bukan di handler. Handler bisa bertambah
@@ -148,6 +158,10 @@ func (s *Service) SendMessage(ctx context.Context, in SendMessageInput) (Message
 		return Message{}, ErrNotMember
 	}
 
+	if in.Type == MessageText && len(in.MediaIDs) > 0 {
+		in.Type = MessageMedia
+	}
+
 	msg := Message{
 		ID:             id.New(),
 		ConversationID: in.ConversationID,
@@ -156,6 +170,7 @@ func (s *Service) SendMessage(ctx context.Context, in SendMessageInput) (Message
 		Body:           in.Body,
 		ReplyToID:      in.ReplyToID,
 		CreatedAt:      time.Now().UTC(),
+		MediaIDs:       in.MediaIDs,
 	}
 
 	if err := s.repo.InsertMessage(ctx, msg); err != nil {
@@ -175,6 +190,129 @@ func (s *Service) SendMessage(ctx context.Context, in SendMessageInput) (Message
 	}
 
 	return msg, nil
+}
+
+// GetConversation mengembalikan info satu percakapan (untuk layar info grup).
+func (s *Service) GetConversation(ctx context.Context, conversationID, userID string) (ConversationDetail, error) {
+	if conversationID == "" || userID == "" {
+		return ConversationDetail{}, ErrInvalidInput
+	}
+	return s.repo.GetConversation(ctx, conversationID, userID)
+}
+
+// Members mengembalikan daftar anggota percakapan.
+func (s *Service) Members(ctx context.Context, conversationID, userID string) ([]Member, error) {
+	if conversationID == "" || userID == "" {
+		return nil, ErrInvalidInput
+	}
+	return s.repo.ListMembers(ctx, conversationID, userID)
+}
+
+// AddMembers menambah anggota ke grup. Hanya admin/owner.
+func (s *Service) AddMembers(ctx context.Context, conversationID, userID string, memberIDs []string) (int, error) {
+	if conversationID == "" || userID == "" || len(memberIDs) == 0 {
+		return 0, ErrInvalidInput
+	}
+	if len(memberIDs) > MaxGroupMembers {
+		return 0, ErrInvalidInput
+	}
+	added, err := s.repo.AddMembers(ctx, conversationID, userID, memberIDs)
+	if err != nil {
+		return 0, err
+	}
+	s.broadcastConversation(ctx, conversationID)
+	return added, nil
+}
+
+// RemoveMember mengeluarkan anggota. Hanya admin/owner; owner tak bisa dikeluarkan.
+func (s *Service) RemoveMember(ctx context.Context, conversationID, userID, memberID string) error {
+	if conversationID == "" || userID == "" || memberID == "" {
+		return ErrInvalidInput
+	}
+	if err := s.repo.RemoveMember(ctx, conversationID, userID, memberID); err != nil {
+		return err
+	}
+	s.broadcastConversation(ctx, conversationID)
+	return nil
+}
+
+// Leave mengeluarkan pemanggil dari grup. Kalau owner keluar, kepemilikan
+// diwariskan ke anggota terlama.
+func (s *Service) Leave(ctx context.Context, conversationID, userID string) error {
+	if conversationID == "" || userID == "" {
+		return ErrInvalidInput
+	}
+	if err := s.repo.Leave(ctx, conversationID, userID); err != nil {
+		return err
+	}
+	s.broadcastConversation(ctx, conversationID)
+	return nil
+}
+
+// UpdateGroup mengubah judul dan/atau avatar grup. Hanya admin/owner.
+func (s *Service) UpdateGroup(ctx context.Context, conversationID, userID, title, avatarMediaID string) error {
+	title = strings.TrimSpace(title)
+	if conversationID == "" || userID == "" {
+		return ErrInvalidInput
+	}
+	if title != "" && utf8.RuneCountInString(title) > MaxTitleLength {
+		return ErrInvalidInput
+	}
+	if err := s.repo.UpdateGroup(ctx, conversationID, userID, title, avatarMediaID); err != nil {
+		return err
+	}
+	s.broadcastConversation(ctx, conversationID)
+	return nil
+}
+
+// SetMemberRole menjadikan anggota admin atau menurunkannya. Hanya owner.
+func (s *Service) SetMemberRole(ctx context.Context, conversationID, userID, memberID, role string) error {
+	if conversationID == "" || userID == "" || memberID == "" {
+		return ErrInvalidInput
+	}
+	if role != "admin" && role != "member" {
+		return ErrInvalidInput
+	}
+	if err := s.repo.SetMemberRole(ctx, conversationID, userID, memberID, role); err != nil {
+		return err
+	}
+	s.broadcastConversation(ctx, conversationID)
+	return nil
+}
+
+// Mute membisukan percakapan sampai waktu tertentu. until nil = bunyikan lagi.
+func (s *Service) Mute(ctx context.Context, conversationID, userID string, until *time.Time) error {
+	if conversationID == "" || userID == "" {
+		return ErrInvalidInput
+	}
+	return s.repo.Mute(ctx, conversationID, userID, until)
+}
+
+// React menambah/mengubah reaksi emoji pada pesan. emoji kosong menghapusnya.
+func (s *Service) React(ctx context.Context, messageID, userID, emoji string) error {
+	if messageID == "" || userID == "" {
+		return ErrInvalidInput
+	}
+	// Reaksi muncul di layar peserta lain saat mereka memuat ulang reaksi
+	// pesan itu; belum ada siaran realtime karena repo tidak mengembalikan
+	// id percakapan yang dibutuhkan untuk menargetkan topik.
+	return s.repo.React(ctx, messageID, userID, emoji)
+}
+
+// Reactions mengembalikan reaksi untuk sekumpulan pesan sekaligus.
+func (s *Service) Reactions(ctx context.Context, userID string, messageIDs []string) ([]Reaction, error) {
+	if userID == "" || len(messageIDs) == 0 {
+		return nil, ErrInvalidInput
+	}
+	return s.repo.ListReactions(ctx, userID, messageIDs)
+}
+
+// broadcastConversation memberi tahu peserta bahwa keanggotaan/info berubah,
+// supaya layar info grup menyegarkan diri tanpa polling.
+func (s *Service) broadcastConversation(ctx context.Context, conversationID string) {
+	_ = s.pub.Publish(ctx, topic.Conversation(conversationID), EventConversationUpdated, map[string]any{
+		"conversation_id": conversationID,
+	})
 }
 
 // DeleteMessage menghapus pesan milik pemanggil.

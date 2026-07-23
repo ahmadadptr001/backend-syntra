@@ -22,16 +22,28 @@ type ChatService interface {
 	CreateGroup(ctx context.Context, userID, title string, memberIDs []string) (string, error)
 	DeleteMessage(ctx context.Context, messageID, userID string) error
 	ClearConversation(ctx context.Context, conversationID, userID string) error
+
+	GetConversation(ctx context.Context, conversationID, userID string) (chat.ConversationDetail, error)
+	Members(ctx context.Context, conversationID, userID string) ([]chat.Member, error)
+	AddMembers(ctx context.Context, conversationID, userID string, memberIDs []string) (int, error)
+	RemoveMember(ctx context.Context, conversationID, userID, memberID string) error
+	Leave(ctx context.Context, conversationID, userID string) error
+	UpdateGroup(ctx context.Context, conversationID, userID, title, avatarMediaID string) error
+	SetMemberRole(ctx context.Context, conversationID, userID, memberID, role string) error
+	Mute(ctx context.Context, conversationID, userID string, until *time.Time) error
+	React(ctx context.Context, messageID, userID, emoji string) error
+	Reactions(ctx context.Context, userID string, messageIDs []string) ([]chat.Reaction, error)
 }
 
 // Chat menangani endpoint percakapan.
 type Chat struct {
-	svc ChatService
+	svc   ChatService
+	media MediaURLResolver
 }
 
 // NewChat membuat handler chat.
-func NewChat(svc ChatService) *Chat {
-	return &Chat{svc: svc}
+func NewChat(svc ChatService, media MediaURLResolver) *Chat {
+	return &Chat{svc: svc, media: media}
 }
 
 type conversationDTO struct {
@@ -112,9 +124,10 @@ func (h *Chat) ListConversations(w http.ResponseWriter, r *http.Request) {
 }
 
 type sendMessageRequest struct {
-	Type      string `json:"type,omitempty"`
-	Body      string `json:"body,omitempty"`
-	ReplyToID string `json:"reply_to_id,omitempty"`
+	Type      string   `json:"type,omitempty"`
+	Body      string   `json:"body,omitempty"`
+	ReplyToID string   `json:"reply_to_id,omitempty"`
+	MediaIDs  []string `json:"media_ids,omitempty"`
 }
 
 type messageDTO struct {
@@ -127,9 +140,20 @@ type messageDTO struct {
 	CreatedAt      time.Time  `json:"created_at"`
 	EditedAt       *time.Time `json:"edited_at,omitempty"`
 	IsDeleted      bool       `json:"is_deleted,omitempty"`
+	Attachments    []string   `json:"attachments,omitempty"`
 }
 
-func toMessageDTO(m chat.Message) messageDTO {
+// toMessageDTO menerjemahkan pesan domain, memetakan storage key lampiran ke
+// URL yang bisa dibuka klien. media diperlukan untuk itu; boleh nil untuk
+// pesan tanpa lampiran.
+func toMessageDTO(m chat.Message, media MediaURLResolver) messageDTO {
+	var urls []string
+	if len(m.AttachmentKeys) > 0 && media != nil {
+		urls = make([]string, 0, len(m.AttachmentKeys))
+		for _, k := range m.AttachmentKeys {
+			urls = append(urls, media.PublicURL(k))
+		}
+	}
 	return messageDTO{
 		ID:             m.ID,
 		ConversationID: m.ConversationID,
@@ -140,6 +164,7 @@ func toMessageDTO(m chat.Message) messageDTO {
 		CreatedAt:      m.CreatedAt,
 		EditedAt:       m.EditedAt,
 		IsDeleted:      m.IsDeleted,
+		Attachments:    urls,
 	}
 }
 
@@ -179,7 +204,7 @@ func (h *Chat) ListMessages(w http.ResponseWriter, r *http.Request) {
 
 	items := make([]messageDTO, 0, len(messages))
 	for _, m := range messages {
-		items = append(items, toMessageDTO(m))
+		items = append(items, toMessageDTO(m, h.media))
 	}
 
 	meta := messagePageMeta{Count: len(items)}
@@ -266,13 +291,14 @@ func (h *Chat) SendMessage(w http.ResponseWriter, r *http.Request) {
 		Type:           chat.MessageType(req.Type),
 		Body:           req.Body,
 		ReplyToID:      req.ReplyToID,
+		MediaIDs:       req.MediaIDs,
 	})
 	if err != nil {
 		writeDomainError(w, r, err)
 		return
 	}
 
-	httpx.Created(w, toMessageDTO(msg))
+	httpx.Created(w, toMessageDTO(msg, h.media))
 }
 
 // DeleteMessage menangani DELETE /api/v1/messages/{id}.
@@ -346,6 +372,9 @@ func writeDomainError(w http.ResponseWriter, r *http.Request, err error) {
 
 	case errors.Is(err, chat.ErrNotAllowed):
 		httpx.Fail(w, r, http.StatusForbidden, httpx.CodeForbidden, "percakapan tidak diizinkan")
+
+	case errors.Is(err, chat.ErrNotGroup):
+		httpx.Fail(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "bukan percakapan grup")
 
 	case errors.Is(err, chat.ErrEmptyBody),
 		errors.Is(err, chat.ErrBodyTooLong),

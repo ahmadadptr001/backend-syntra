@@ -5,9 +5,10 @@ import "time"
 // Nama event yang disiarkan domain chat. Konstanta ini adalah kontrak dengan
 // klien Kotlin — mengubah nilainya berarti merusak aplikasi yang sudah rilis.
 const (
-	EventMessageNew  = "message.new"
-	EventMessageRead = "message.read"
-	EventTyping      = "typing"
+	EventMessageNew          = "message.new"
+	EventMessageRead         = "message.read"
+	EventTyping              = "typing"
+	EventConversationUpdated = "conversation.updated"
 )
 
 // MessageEvent adalah bentuk payload yang dikirim ke klien.

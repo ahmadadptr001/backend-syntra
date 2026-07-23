@@ -28,7 +28,11 @@ const (
 	MaxBodyLength   = 4000
 	MaxTitleLength  = 100
 	MaxGroupMembers = 256
+	MaxAttachments  = 10
 )
+
+// ErrNotGroup dikembalikan saat operasi grup dipanggil pada chat pribadi.
+var ErrNotGroup = errors.New("chat: bukan percakapan grup")
 
 // ConversationType membedakan chat pribadi dan grup.
 type ConversationType string
@@ -95,6 +99,44 @@ type Message struct {
 	// IsDeleted menandai pesan yang dihapus. Barisnya tetap dikirim ke klien
 	// dengan Body kosong supaya urutan riwayat tidak berlubang.
 	IsDeleted bool
+
+	// AttachmentKeys adalah storage key lampiran yang DIKEMBALIKAN ke klien,
+	// urut posisi. Kosong untuk pesan teks biasa.
+	AttachmentKeys []string
+
+	// MediaIDs adalah lampiran yang DIKIRIM saat membuat pesan (input). Tidak
+	// ikut diserialkan ke klien.
+	MediaIDs []string
+}
+
+// ConversationDetail adalah info satu percakapan untuk layar info grup.
+type ConversationDetail struct {
+	ID          string
+	Type        ConversationType
+	Title       string
+	AvatarKey   string
+	CreatedBy   string
+	MyRole      string
+	IsMuted     bool
+	MemberCount int
+	CreatedAt   time.Time
+}
+
+// Member adalah satu anggota percakapan.
+type Member struct {
+	UserID      string
+	Username    string
+	DisplayName string
+	AvatarKey   string
+	Role        string
+	JoinedAt    time.Time
+}
+
+// Reaction adalah satu reaksi emoji pada sebuah pesan.
+type Reaction struct {
+	MessageID string
+	UserID    string
+	Emoji     string
 }
 
 // Repository adalah port penyimpanan. Diimplementasikan oleh
@@ -109,6 +151,17 @@ type Repository interface {
 	CreateGroup(ctx context.Context, userID, title string, memberIDs []string) (string, error)
 	DeleteMessage(ctx context.Context, messageID, userID string) error
 	ClearConversation(ctx context.Context, conversationID, userID string) error
+
+	GetConversation(ctx context.Context, conversationID, userID string) (ConversationDetail, error)
+	ListMembers(ctx context.Context, conversationID, userID string) ([]Member, error)
+	AddMembers(ctx context.Context, conversationID, userID string, memberIDs []string) (int, error)
+	RemoveMember(ctx context.Context, conversationID, userID, memberID string) error
+	Leave(ctx context.Context, conversationID, userID string) error
+	UpdateGroup(ctx context.Context, conversationID, userID, title, avatarMediaID string) error
+	SetMemberRole(ctx context.Context, conversationID, userID, memberID, role string) error
+	Mute(ctx context.Context, conversationID, userID string, until *time.Time) error
+	React(ctx context.Context, messageID, userID, emoji string) error
+	ListReactions(ctx context.Context, userID string, messageIDs []string) ([]Reaction, error)
 }
 
 // Publisher adalah port siaran realtime. Diimplementasikan oleh
