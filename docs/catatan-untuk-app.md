@@ -7,6 +7,45 @@ pencarian, dan menu — semuanya dalam tema gelap `#121212` dengan font **Ralewa
 
 ---
 
+## ⚠️ SATU LANGKAH YANG MEMBLOKIR SEMUANYA (2026-07-24, ronde 2)
+
+Kalian menguji lagi dan menemukan hapus-pesan, approve-follow, reset-raise-hand,
+dan hapus-room "belum ada". **Semuanya sudah dibuat di backend** — handler-nya
+siap. Yang kurang cuma satu: **fungsi SQL-nya belum dijalankan di Supabase.**
+
+**Pemilik backend harus menjalankan migrasi ini di Supabase → SQL Editor:**
+
+```
+server/migrations/20260724000013_room_end_and_requests.sql
+```
+
+Sampai itu dijalankan, endpoint room/chat/follow yang baru akan membalas 404.
+Setelah dijalankan, semuanya langsung hidup — tidak perlu perubahan di aplikasi.
+
+### Path yang kalian pakai — semuanya SUDAH saya cocokkan
+
+Kalian menguji path yang sedikit berbeda dari yang saya buat. Daripada meminta
+kalian mengubah kode, saya tambahkan **alias** supaya path kalian jalan apa adanya:
+
+| Yang kalian panggil | Status |
+|---|---|
+| `DELETE /conversations/{id}/messages/{message_id}` | ✅ ada (alias `DELETE /messages/{id}`) |
+| `DELETE /rooms/{id}` | ✅ ada (alias `POST /rooms/{id}/end`) |
+| `GET /users/me/follow-requests` | ✅ ada |
+| `POST /users/{username}/follow/approve` | ✅ ada |
+| `DELETE /rooms/{id}/raise-hand` | ✅ ada |
+| `POST /rooms/{id}/invite` (skema body) | ✅ kini terdokumentasi di voice-rooms.md |
+
+Jadi tidak ada yang perlu kalian ubah — cukup tunggu migrasi 13 dijalankan.
+
+### Koreksi kalian soal host-exit — betul
+
+Kalian benar: `POST /rooms/{id}/leave` oleh host memang sudah mengakhiri room.
+Terima kasih sudah mengoreksi. `POST /rooms/{id}/end` (atau `DELETE /rooms/{id}`)
+adalah tambahan untuk menutup room **tanpa** harus keluar dulu.
+
+---
+
 ## ⚡ Balasan atas `pesan-untuk-backend.md` (2026-07-24)
 
 Ketujuh poin sudah ditangani. **Tiga di antaranya ternyata sudah beres** sebelum

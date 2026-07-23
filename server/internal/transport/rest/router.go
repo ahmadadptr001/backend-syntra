@@ -73,6 +73,9 @@ func NewRouter(d Deps) http.Handler {
 		protected(http.HandlerFunc(d.Chat.ClearConversation)))
 	mux.Handle("DELETE /api/v1/messages/{id}",
 		protected(http.HandlerFunc(d.Chat.DeleteMessage)))
+	// Bentuk bersarang yang dipakai aplikasi — setara dengan yang di atas.
+	mux.Handle("DELETE /api/v1/conversations/{id}/messages/{message_id}",
+		protected(http.HandlerFunc(d.Chat.DeleteMessageNested)))
 
 	// --- story ---
 	mux.Handle("GET /api/v1/stories",
@@ -119,6 +122,9 @@ func NewRouter(d Deps) http.Handler {
 	mux.Handle("POST /api/v1/rooms/{id}/leave",
 		protected(http.HandlerFunc(d.Room.Leave)))
 	mux.Handle("POST /api/v1/rooms/{id}/end",
+		protected(http.HandlerFunc(d.Room.End)))
+	// Bentuk RESTful yang dipakai aplikasi — setara dengan POST .../end.
+	mux.Handle("DELETE /api/v1/rooms/{id}",
 		protected(http.HandlerFunc(d.Room.End)))
 	mux.Handle("GET /api/v1/rooms/{id}/requests",
 		protected(http.HandlerFunc(d.Room.JoinRequests)))

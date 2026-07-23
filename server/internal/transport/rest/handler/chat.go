@@ -293,6 +293,26 @@ func (h *Chat) DeleteMessage(w http.ResponseWriter, r *http.Request) {
 	httpx.NoContent(w)
 }
 
+// DeleteMessageNested menangani DELETE /api/v1/conversations/{id}/messages/{message_id}.
+//
+// Bentuk bersarang yang RESTful, dipakai aplikasi. Setara dengan
+// DELETE /api/v1/messages/{message_id} — keduanya menghapus satu pesan milik
+// pengirimnya. id percakapan di path tidak dipakai; message_id sudah cukup
+// menemukan pesannya, dan kepemilikan diperiksa di service.
+func (h *Chat) DeleteMessageNested(w http.ResponseWriter, r *http.Request) {
+	messageID := r.PathValue("message_id")
+	if messageID == "" {
+		httpx.Fail(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "id pesan tidak boleh kosong")
+		return
+	}
+
+	if err := h.svc.DeleteMessage(r.Context(), messageID, auth.UserID(r.Context())); err != nil {
+		writeDomainError(w, r, err)
+		return
+	}
+	httpx.NoContent(w)
+}
+
 // ClearConversation menangani DELETE /api/v1/conversations/{id}/messages.
 //
 // Mengosongkan riwayat HANYA untuk pemanggil. Peserta lain tetap melihat

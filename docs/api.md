@@ -183,6 +183,7 @@ Seluruh baris di tabel ini **diverifikasi jalan** lewat `server/scripts/smoke.ps
 | `POST` | `/api/v1/conversations/{id}/messages` | ✅ |
 | `DELETE` | `/api/v1/conversations/{id}/messages` | ✅ |
 | `DELETE` | `/api/v1/messages/{id}` | ✅ |
+| `DELETE` | `/api/v1/conversations/{id}/messages/{message_id}` | ✅ |
 | `GET` | `/api/v1/stories` | ✅ |
 | `POST` | `/api/v1/stories` | ✅ |
 | `GET` | `/api/v1/stories/me` | ✅ |
@@ -201,6 +202,7 @@ Seluruh baris di tabel ini **diverifikasi jalan** lewat `server/scripts/smoke.ps
 | `POST` | `/api/v1/rooms/{id}/join` | ✅ |
 | `POST` | `/api/v1/rooms/{id}/leave` | ✅ |
 | `POST` | `/api/v1/rooms/{id}/end` | ✅ |
+| `DELETE` | `/api/v1/rooms/{id}` | ✅ |
 | `GET` | `/api/v1/rooms/{id}/requests` | ✅ |
 | `POST` | `/api/v1/rooms/{id}/requests/{user_id}/approve` | ✅ |
 | `POST` | `/api/v1/rooms/{id}/requests/{user_id}/reject` | ✅ |
@@ -365,6 +367,9 @@ dan otorisasinya identik. Batas panjang teks: **4000 karakter**.
 ### `DELETE /api/v1/messages/{id}`
 
 Menghapus satu pesan. Hanya pengirimnya — `403` untuk yang lain. Balasan `204`.
+
+> Alias: `DELETE /api/v1/conversations/{id}/messages/{message_id}` melakukan hal
+> yang sama persis (bentuk bersarang RESTful). Pakai yang mana pun.
 
 **Soft delete.** Barisnya tetap muncul di riwayat dengan `is_deleted: true` dan
 `body` kosong, supaya urutan pesan tidak berlubang bagi peserta lain. Tampilkan

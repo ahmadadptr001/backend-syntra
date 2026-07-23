@@ -188,6 +188,23 @@ boleh. Peran `host` tidak bisa diberikan — ia melekat pada pembuat room.
 Setelah ini, klien yang bersangkutan **harus memanggil `join` lagi** untuk
 mendapat token dengan `canPublish: true`.
 
+### `POST /api/v1/rooms/{id}/invite`
+
+Menambahkan seseorang ke daftar undangan room `invite_only`. Host & moderator
+saja. Balasan `204`.
+
+```json
+{ "user_id": "d5891ae6-4864-4b9c-9b2c-ba41ed084df4" }
+```
+
+Yang diundang lolos ruang tunggu: `join`-nya langsung `status: "joined"`, tanpa
+menunggu persetujuan.
+
+### `DELETE /api/v1/rooms/{id}`
+
+Alias RESTful untuk `POST /api/v1/rooms/{id}/end`. Sama persis — host saja,
+`204`, room berakhir. Pakai yang mana pun.
+
 ### `POST /api/v1/rooms/{id}/end`
 
 Mengakhiri room. **Hanya host** — `403` untuk yang lain. Balasan `204`.
