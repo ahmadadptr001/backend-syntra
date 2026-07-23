@@ -33,9 +33,10 @@ var (
 // SQLSTATE yang dipakai fungsi database untuk melaporkan kegagalan domain.
 // Nilai ini harus sama persis dengan yang di-RAISE pada berkas migrasi.
 const (
-	sqlstateNotMember   = "42501" // insufficient_privilege
-	sqlstateNotFound    = "P0002" // no_data_found
-	sqlstateInvalidData = "22023" // invalid_parameter_value
+	sqlstateNotMember       = "42501" // insufficient_privilege
+	sqlstateNotFound        = "P0002" // no_data_found
+	sqlstateInvalidData     = "22023" // invalid_parameter_value
+	sqlstateUniqueViolation = "23505" // unique_violation
 )
 
 // ChatRepository memenuhi kontrak chat.Repository.

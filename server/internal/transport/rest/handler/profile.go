@@ -41,6 +41,7 @@ type myProfileDTO struct {
 	DisplayName string `json:"display_name"`
 	Bio         string `json:"bio,omitempty"`
 	AvatarURL   string `json:"avatar_url,omitempty"`
+	CoverURL    string `json:"cover_url,omitempty"`
 
 	FollowerCount  int `json:"follower_count"`
 	FollowingCount int `json:"following_count"`
@@ -70,6 +71,7 @@ func (h *Profile) GetMe(w http.ResponseWriter, r *http.Request) {
 		DisplayName:    p.DisplayName,
 		Bio:            p.Bio,
 		AvatarURL:      h.media.PublicURL(p.AvatarKey),
+		CoverURL:       h.media.PublicURL(p.CoverKey),
 		FollowerCount:  p.FollowerCount,
 		FollowingCount: p.FollowingCount,
 		IsPrivate:      p.IsPrivate,
@@ -84,6 +86,8 @@ type updateProfileRequest struct {
 	DisplayName   *string `json:"display_name,omitempty"`
 	Bio           *string `json:"bio,omitempty"`
 	AvatarMediaID *string `json:"avatar_media_id,omitempty"`
+	CoverMediaID  *string `json:"cover_media_id,omitempty"`
+	Username      *string `json:"username,omitempty"`
 	IsPrivate     *bool   `json:"is_private,omitempty"`
 	DMPrivacy     *string `json:"dm_privacy,omitempty"`
 	StoryPrivacy  *string `json:"story_privacy,omitempty"`
@@ -104,6 +108,8 @@ func (h *Profile) UpdateMe(w http.ResponseWriter, r *http.Request) {
 		DisplayName:   req.DisplayName,
 		Bio:           req.Bio,
 		AvatarMediaID: req.AvatarMediaID,
+		CoverMediaID:  req.CoverMediaID,
+		Username:      req.Username,
 		IsPrivate:     req.IsPrivate,
 		DMPrivacy:     req.DMPrivacy,
 		StoryPrivacy:  req.StoryPrivacy,
@@ -224,6 +230,13 @@ func writeProfileError(w http.ResponseWriter, r *http.Request, err error) {
 
 	case errors.Is(err, account.ErrCannotBlockSelf):
 		httpx.Fail(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "tidak bisa memblokir diri sendiri")
+
+	case errors.Is(err, account.ErrUsernameTaken):
+		httpx.Fail(w, r, http.StatusConflict, httpx.CodeConflict, "username sudah dipakai")
+
+	case errors.Is(err, account.ErrInvalidUsername):
+		httpx.Fail(w, r, http.StatusBadRequest, httpx.CodeBadRequest,
+			"username harus 3–30 karakter, diawali huruf, hanya huruf kecil/angka/titik/garis bawah")
 
 	case errors.Is(err, account.ErrBadPrivacy),
 		errors.Is(err, account.ErrInvalidInput):

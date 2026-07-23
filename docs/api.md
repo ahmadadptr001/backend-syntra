@@ -817,6 +817,7 @@ tanggal lahir, preferensi privasi.
     "display_name": "Budi Santoso",
     "bio": "",
     "avatar_url": "https://.../object/public/media/...",
+    "cover_url": "https://.../object/public/media/...",
     "follower_count": 1,
     "following_count": 0,
     "is_private": false,
@@ -827,20 +828,34 @@ tanggal lahir, preferensi privasi.
 } }
 ```
 
-Berbeda dari `GET /users/{username}` yang hanya data publik.
+Berbeda dari `GET /users/{username}` yang hanya data publik. `avatar_url` /
+`cover_url` kosong kalau belum diset.
 
 ### `PATCH /api/v1/users/me`
 
 Ubah profil. **Kirim hanya field yang berubah** — yang tidak disertakan tidak
-diubah.
+diubah. Balasannya profil terbaru (bentuk sama dengan `GET`).
 
 ```json
-{ "display_name": "Budi S.", "bio": "halo", "is_private": true }
+{ "display_name": "Budi S.", "bio": "halo", "username": "budi.s", "is_private": true }
 ```
 
-Field: `display_name` (≤60), `bio` (≤200), `avatar_media_id`, `is_private`,
-`dm_privacy` (`everyone`|`following`|`nobody`), `story_privacy`
-(`public`|`followers`|`close_friends`). Balasannya profil terbaru.
+| Field | Aturan |
+|---|---|
+| `display_name` | ≤ 60 karakter |
+| `bio` | ≤ 200 karakter |
+| `username` | 3–30 karakter, **diawali huruf**, hanya huruf kecil/angka/titik/garis bawah; unik. `409` kalau sudah dipakai, `400` kalau formatnya salah |
+| `avatar_media_id` | id media (foto) milik sendiri yang sudah dikonfirmasi |
+| `cover_media_id` | id media (foto sampul) milik sendiri |
+| `is_private` | akun privat |
+| `dm_privacy` | `everyone` \| `following` \| `nobody` |
+| `story_privacy` | `public` \| `followers` \| `close_friends` |
+
+Ganti foto profil/sampul: unggah lewat alur media §8 → ambil `media_id` →
+`PATCH` dengan `avatar_media_id` / `cover_media_id`.
+
+> **Email & kata sandi** tidak diubah di sini — keduanya milik Supabase Auth;
+> aplikasi memakai Supabase SDK (`updateUser`) langsung untuk itu.
 
 ### Blokir
 

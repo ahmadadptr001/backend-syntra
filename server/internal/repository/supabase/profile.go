@@ -51,6 +51,7 @@ type myProfileRow struct {
 	DisplayName    string  `json:"display_name"`
 	Bio            string  `json:"bio"`
 	AvatarKey      string  `json:"avatar_key"`
+	CoverKey       string  `json:"cover_key"`
 	FollowerCount  int     `json:"follower_count"`
 	FollowingCount int     `json:"following_count"`
 	IsPrivate      bool    `json:"is_private"`
@@ -83,6 +84,7 @@ func (r *ProfileRepository) GetMyProfile(ctx context.Context) (account.MyProfile
 		DisplayName:    row.DisplayName,
 		Bio:            row.Bio,
 		AvatarKey:      row.AvatarKey,
+		CoverKey:       row.CoverKey,
 		FollowerCount:  row.FollowerCount,
 		FollowingCount: row.FollowingCount,
 		IsPrivate:      row.IsPrivate,
@@ -110,6 +112,17 @@ func (r *ProfileRepository) UpdateMyProfile(ctx context.Context, in account.Upda
 		"p_is_private":    boolPtr(in.IsPrivate),
 		"p_dm_privacy":    strPtr(in.DMPrivacy),
 		"p_story_privacy": strPtr(in.StoryPrivacy),
+	}
+	// p_username & p_cover_media hanya disertakan saat benar-benar diisi. Tanpa
+	// ini, tiap edit profil mengirim 8 argumen dan hanya cocok dengan versi
+	// fungsi dari migrasi 17 — sehingga edit profil biasa (nama/bio) akan 404
+	// sebelum migrasi itu dijalankan. Keduanya fitur baru yang memang butuh
+	// migrasi tersebut.
+	if in.Username != nil {
+		args["p_username"] = *in.Username
+	}
+	if in.CoverMediaID != nil {
+		args["p_cover_media"] = *in.CoverMediaID
 	}
 
 	if err := r.client.RPC(ctx, "update_my_profile", args, nil, actor); err != nil {
@@ -223,10 +236,14 @@ func translateProfile(err error) error {
 	}
 
 	switch {
-	case apiErr.Code == sqlstateNotFound, apiErr.IsNotFound():
-		return account.ErrProfileNotFound
+	case apiErr.Code == sqlstateUniqueViolation:
+		// Satu-satunya constraint unik yang bisa dilanggar lewat jalur ini
+		// adalah username; keluhan lain tidak sampai ke sini.
+		return account.ErrUsernameTaken
 	case apiErr.Code == sqlstateInvalidData:
 		return account.ErrInvalidInput
+	case apiErr.Code == sqlstateNotFound, apiErr.IsNotFound():
+		return account.ErrProfileNotFound
 	default:
 		return err
 	}

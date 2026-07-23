@@ -3,6 +3,7 @@ package account
 import (
 	"context"
 	"errors"
+	"regexp"
 	"strings"
 	"unicode/utf8"
 )
@@ -14,12 +15,20 @@ var (
 	ErrProfileNotFound = errors.New("account: profil tidak ditemukan")
 	ErrBadPrivacy      = errors.New("account: nilai privasi tidak valid")
 	ErrCannotBlockSelf = errors.New("account: tidak bisa memblokir diri sendiri")
+	ErrUsernameTaken   = errors.New("account: username sudah dipakai")
+	ErrInvalidUsername = errors.New("account: username tidak valid")
 )
 
 const (
 	MaxDisplayName = 60
 	MaxBio         = 200
+	MinUsername    = 3
+	MaxUsername    = 30
 )
+
+// usernamePattern menyamai aturan di SQL is_valid_username: diawali huruf
+// kecil, lalu huruf kecil/angka/titik/garis bawah, total 3–30 karakter.
+var usernamePattern = regexp.MustCompile(`^[a-z][a-z0-9._]{2,29}$`)
 
 // MyProfile adalah profil lengkap pemilik akun — termasuk yang tidak boleh
 // dilihat orang lain (email, preferensi privasi, tanggal lahir).
@@ -30,6 +39,7 @@ type MyProfile struct {
 	DisplayName string
 	Bio         string
 	AvatarKey   string
+	CoverKey    string
 
 	FollowerCount  int
 	FollowingCount int
@@ -54,6 +64,8 @@ type UpdateProfileInput struct {
 	DisplayName   *string
 	Bio           *string
 	AvatarMediaID *string
+	CoverMediaID  *string
+	Username      *string
 	IsPrivate     *bool
 	DMPrivacy     *string
 	StoryPrivacy  *string
@@ -113,6 +125,16 @@ func (s *ProfileService) Update(ctx context.Context, in UpdateProfileInput) erro
 	}
 	if in.StoryPrivacy != nil && !validStoryPrivacy(*in.StoryPrivacy) {
 		return ErrBadPrivacy
+	}
+	if in.Username != nil {
+		// Normalisasi ke huruf kecil di sini juga, supaya validasi sisi server
+		// cocok dengan aturan citext & regex di SQL. Keunikan tetap ditegakkan
+		// database — di sini hanya bentuknya.
+		uname := strings.ToLower(strings.TrimSpace(*in.Username))
+		if !usernamePattern.MatchString(uname) {
+			return ErrInvalidUsername
+		}
+		in.Username = &uname
 	}
 	return s.store.UpdateMyProfile(ctx, in)
 }
