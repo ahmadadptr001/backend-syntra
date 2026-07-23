@@ -127,6 +127,31 @@ Test-Endpoint "GET  /stories/me?include_expired" GET "$api/stories/me?include_ex
 Test-Endpoint "DEL  /stories/{id} (tidak ada -> 404)" DELETE `
     "$api/stories/00000000-0000-0000-0000-000000000000" $null 404
 
+# Alur penuh: unggah media -> buat story -> penonton -> hapus.
+# Diuji utuh karena daftar penonton hanya bisa dibuktikan dengan story nyata.
+$up = (Invoke-RestMethod "$api/media/upload-url" -Method Post -Headers $script:hdr `
+    -ContentType 'application/json' -Body (@{ kind = 'image'; extension = 'jpg' } | ConvertTo-Json)).data
+$null = Invoke-RestMethod "$api/media/$($up.media_id)/confirm" -Method Post -Headers $script:hdr `
+    -ContentType 'application/json' -Body (@{
+        kind = 'image'; storage_key = $up.storage_key; mime_type = 'image/jpeg'
+        size_bytes = 1024; width = 1080; height = 1920 } | ConvertTo-Json)
+$storyId = (Invoke-RestMethod "$api/stories" -Method Post -Headers $script:hdr `
+    -ContentType 'application/json' -Body (@{ media_id = $up.media_id } | ConvertTo-Json)).data.id
+
+# Citra menonton, supaya daftar penontonnya tidak kosong.
+$null = Invoke-RestMethod "$api/stories/$storyId/view" -Method Post `
+    -Headers @{ Authorization = "Bearer $(Get-Jwt 'citra@syntra.app' 'citra123456')" }
+
+Test-Endpoint "GET  /stories/{id}/viewers" GET "$api/stories/$storyId/viewers" $null
+
+# Penonton bukan pemilik: harus ditolak.
+$owner = $script:hdr
+$script:hdr = @{ Authorization = "Bearer $(Get-Jwt 'citra@syntra.app' 'citra123456')" }
+Test-Endpoint "GET  /stories/{id}/viewers (bukan pemilik -> 403)" GET "$api/stories/$storyId/viewers" $null 403
+$script:hdr = $owner
+
+Test-Endpoint "DEL  /stories/{id} (milik sendiri)" DELETE "$api/stories/$storyId" $null
+
 Write-Host "`n--- PENGGUNA & FOLLOW ---"
 Test-Endpoint "GET  /users/{username}" GET "$api/users/citra" $null
 Test-Endpoint "GET  /users/me/following" GET "$api/users/me/following" $null

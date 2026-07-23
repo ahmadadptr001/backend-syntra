@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/ahmadadptr001/backend-syntra/internal/auth"
@@ -17,6 +18,7 @@ type StoryService interface {
 	Create(ctx context.Context, userID, mediaID string, visibility story.Visibility) (story.Story, error)
 	ListGrouped(ctx context.Context, userID string) ([]story.Group, error)
 	ListMine(ctx context.Context, userID string, includeExpired bool) ([]story.Mine, error)
+	Viewers(ctx context.Context, storyID, userID string, before story.ViewerCursor, limit int) ([]story.Viewer, error)
 	MarkViewed(ctx context.Context, storyID, userID string) error
 	Delete(ctx context.Context, storyID, userID string) error
 }
@@ -204,6 +206,79 @@ func (h *Story) ListMine(w http.ResponseWriter, r *http.Request) {
 	}
 
 	httpx.Page(w, items, pageMeta{Count: len(items)})
+}
+
+type viewerDTO struct {
+	UserID      string    `json:"user_id"`
+	Username    string    `json:"username"`
+	DisplayName string    `json:"display_name"`
+	AvatarURL   string    `json:"avatar_url,omitempty"`
+	ViewedAt    time.Time `json:"viewed_at"`
+}
+
+type viewerPageMeta struct {
+	Count int `json:"count"`
+
+	// Cursor gabungan waktu + id. Waktu saja tidak cukup: dua orang bisa
+	// menonton pada milidetik yang sama, dan salah satunya akan terlewat
+	// saat berpindah halaman.
+	NextBeforeAt *time.Time `json:"next_before_at,omitempty"`
+	NextBeforeID string     `json:"next_before_id,omitempty"`
+}
+
+// Viewers menangani GET /api/v1/stories/{id}/viewers.
+//
+// Hanya pemilik story yang boleh melihatnya — membukanya ke penonton lain
+// berarti memberi tahu siapa saja yang menyimak seseorang.
+func (h *Story) Viewers(w http.ResponseWriter, r *http.Request) {
+	storyID := r.PathValue("id")
+	if storyID == "" {
+		httpx.Fail(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "id story tidak boleh kosong")
+		return
+	}
+
+	limit, err := strconv.Atoi(r.URL.Query().Get("limit"))
+	if err != nil {
+		limit = 0 // service yang menentukan nilai bawaan dan batas atas
+	}
+
+	var cursor story.ViewerCursor
+	if raw := r.URL.Query().Get("before_at"); raw != "" {
+		at, parseErr := time.Parse(time.RFC3339, raw)
+		if parseErr != nil {
+			httpx.Fail(w, r, http.StatusBadRequest, httpx.CodeBadRequest,
+				"before_at harus berformat RFC3339, contoh: 2026-07-23T10:00:00Z")
+			return
+		}
+		cursor.ViewedAt = at
+		cursor.UserID = r.URL.Query().Get("before_id")
+	}
+
+	viewers, err := h.svc.Viewers(r.Context(), storyID, auth.UserID(r.Context()), cursor, limit)
+	if err != nil {
+		writeStoryError(w, r, err)
+		return
+	}
+
+	items := make([]viewerDTO, 0, len(viewers))
+	for _, v := range viewers {
+		items = append(items, viewerDTO{
+			UserID:      v.UserID,
+			Username:    v.Username,
+			DisplayName: v.DisplayName,
+			AvatarURL:   h.media.PublicURL(v.AvatarKey),
+			ViewedAt:    v.ViewedAt,
+		})
+	}
+
+	meta := viewerPageMeta{Count: len(items)}
+	if n := len(items); n > 0 {
+		last := items[n-1]
+		meta.NextBeforeAt = &last.ViewedAt
+		meta.NextBeforeID = last.UserID
+	}
+
+	httpx.Page(w, items, meta)
 }
 
 // Delete menangani DELETE /api/v1/stories/{id}.

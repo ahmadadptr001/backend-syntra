@@ -143,6 +143,55 @@ func (r *StoryRepository) ListMine(ctx context.Context, userID string, includeEx
 	return out, nil
 }
 
+type viewerRow struct {
+	UserID      string    `json:"user_id"`
+	Username    string    `json:"username"`
+	DisplayName string    `json:"display_name"`
+	AvatarKey   string    `json:"avatar_key"`
+	ViewedAt    time.Time `json:"viewed_at"`
+}
+
+// ListViewers memanggil fungsi list_story_viewers.
+func (r *StoryRepository) ListViewers(
+	ctx context.Context,
+	storyID, userID string,
+	before story.ViewerCursor,
+	limit int,
+) ([]story.Viewer, error) {
+	actor, err := actorOption(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	args := map[string]any{
+		"p_story":     storyID,
+		"p_before_at": nil,
+		"p_before_id": nil,
+		"p_limit":     limit,
+	}
+	if !before.IsZero() {
+		args["p_before_at"] = before.ViewedAt.UTC()
+		args["p_before_id"] = nullIfEmpty(before.UserID)
+	}
+
+	var rows []viewerRow
+	if err := r.client.RPC(ctx, "list_story_viewers", args, &rows, actor); err != nil {
+		return nil, translateStory(err)
+	}
+
+	out := make([]story.Viewer, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, story.Viewer{
+			UserID:      row.UserID,
+			Username:    row.Username,
+			DisplayName: row.DisplayName,
+			AvatarKey:   row.AvatarKey,
+			ViewedAt:    row.ViewedAt,
+		})
+	}
+	return out, nil
+}
+
 // Delete memanggil fungsi delete_story.
 func (r *StoryRepository) Delete(ctx context.Context, storyID, userID string) error {
 	actor, err := actorOption(ctx, userID)

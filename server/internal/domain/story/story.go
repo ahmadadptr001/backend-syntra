@@ -25,6 +25,11 @@ var (
 // Lifetime adalah umur sebuah story.
 const Lifetime = 24 * time.Hour
 
+const (
+	defaultViewerPage = 50
+	maxViewerPage     = 200
+)
+
 // Visibility menentukan siapa yang boleh melihat.
 type Visibility string
 
@@ -91,11 +96,33 @@ type Mine struct {
 	IsExpired  bool
 }
 
+// Viewer adalah satu orang yang menonton story.
+type Viewer struct {
+	UserID      string
+	Username    string
+	DisplayName string
+	AvatarKey   string
+	ViewedAt    time.Time
+}
+
+// ViewerCursor menandai posisi terakhir saat memuat halaman berikutnya.
+//
+// Terdiri dari waktu DAN id: dua orang bisa menonton pada milidetik yang sama,
+// dan cursor berbasis waktu saja akan melewatkan salah satunya.
+type ViewerCursor struct {
+	ViewedAt time.Time
+	UserID   string
+}
+
+// IsZero menandai permintaan halaman pertama.
+func (c ViewerCursor) IsZero() bool { return c.ViewedAt.IsZero() }
+
 // Repository adalah port penyimpanan.
 type Repository interface {
 	Create(ctx context.Context, s Story) error
 	ListActive(ctx context.Context, userID string) ([]Story, error)
 	ListMine(ctx context.Context, userID string, includeExpired bool) ([]Mine, error)
+	ListViewers(ctx context.Context, storyID, userID string, before ViewerCursor, limit int) ([]Viewer, error)
 	MarkViewed(ctx context.Context, storyID, userID string) error
 	Delete(ctx context.Context, storyID, userID string) error
 }
@@ -209,6 +236,26 @@ func (s *Service) ListMine(ctx context.Context, userID string, includeExpired bo
 		return nil, ErrInvalidInput
 	}
 	return s.repo.ListMine(ctx, userID, includeExpired)
+}
+
+// Viewers mengembalikan daftar penonton sebuah story, terbaru dulu.
+//
+// Hanya pemilik story yang boleh melihatnya. Membukanya ke penonton lain
+// berarti memberi tahu siapa saja yang menyimak seseorang — informasi yang
+// tidak pernah mereka setujui untuk dibagikan.
+func (s *Service) Viewers(ctx context.Context, storyID, userID string, before ViewerCursor, limit int) ([]Viewer, error) {
+	if storyID == "" || userID == "" {
+		return nil, ErrInvalidInput
+	}
+
+	switch {
+	case limit <= 0:
+		limit = defaultViewerPage
+	case limit > maxViewerPage:
+		limit = maxViewerPage
+	}
+
+	return s.repo.ListViewers(ctx, storyID, userID, before, limit)
 }
 
 // Delete menghapus story milik pemanggil.
