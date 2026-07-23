@@ -258,7 +258,31 @@ yang baru dibuat memang berada di posisi teratas.
 
 ---
 
-### 6. Alamat backend berubah saat ganti Wi-Fi
+### 6. Hapus story — endpoint baru
+
+Sebelumnya **tidak ada cara apa pun** menghapus story, foto maupun video.
+Sekarang ada:
+
+```
+GET    /api/v1/stories/me      story sendiri (+ view_count, is_expired)
+DELETE /api/v1/stories/{id}    hapus story sendiri
+```
+
+`GET /stories/me?include_expired=true` menyertakan yang sudah lewat 24 jam —
+untuk layar arsip.
+
+Yang perlu diketahui saat membangun UI-nya:
+
+- **Konfirmasi sebelum menghapus.** Tidak ada pembatalan; begitu terhapus,
+  story hilang dari layar semua orang.
+- **`view_count` hanya ada di `/stories/me`**, bukan di `GET /stories`. Jumlah
+  penonton adalah informasi pemilik, bukan informasi publik.
+- Setelah `204`, buang story itu dari daftar lokal — tidak perlu memuat ulang.
+- **Medianya tidak ikut terhapus.** Kalau UI menawarkan "hapus permanen
+  termasuk berkasnya", itu belum ada di backend — beri tahu kalau memang
+  dibutuhkan.
+
+### 7. Alamat backend berubah saat ganti Wi-Fi
 
 Base URL menunjuk alamat laptop di jaringan lokal, jadi ia **berubah setiap
 kali laptop pindah Wi-Fi**.

@@ -74,8 +74,12 @@ func NewRouter(d Deps) http.Handler {
 		protected(http.HandlerFunc(d.Story.List)))
 	mux.Handle("POST /api/v1/stories",
 		protected(http.HandlerFunc(d.Story.Create)))
+	mux.Handle("GET /api/v1/stories/me",
+		protected(http.HandlerFunc(d.Story.ListMine)))
 	mux.Handle("POST /api/v1/stories/{id}/view",
 		protected(http.HandlerFunc(d.Story.MarkViewed)))
+	mux.Handle("DELETE /api/v1/stories/{id}",
+		protected(http.HandlerFunc(d.Story.Delete)))
 
 	// --- direktori pengguna & graf pertemanan ---
 	//

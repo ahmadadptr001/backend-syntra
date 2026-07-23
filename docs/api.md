@@ -174,7 +174,9 @@ Seluruh baris di tabel ini **diverifikasi jalan** lewat `server/scripts/smoke.ps
 | `POST` | `/api/v1/conversations/{id}/messages` | ✅ |
 | `GET` | `/api/v1/stories` | ✅ |
 | `POST` | `/api/v1/stories` | ✅ |
+| `GET` | `/api/v1/stories/me` | ✅ |
 | `POST` | `/api/v1/stories/{id}/view` | ✅ |
+| `DELETE` | `/api/v1/stories/{id}` | ✅ |
 | `GET` | `/api/v1/users/{username}` | ✅ |
 | `POST` | `/api/v1/users/{username}/follow` | ✅ |
 | `DELETE` | `/api/v1/users/{username}/follow` | ✅ |
@@ -399,6 +401,51 @@ Media harus **sudah diunggah dan dikonfirmasi** lebih dulu (bagian 8).
 
 Menandai sudah ditonton. Balasan `204`. Idempoten — menonton ulang tidak
 menaikkan counter dua kali.
+
+### `GET /api/v1/stories/me`
+
+Story milik sendiri. Berbeda dari `GET /stories`: di sini yang menarik adalah
+berapa orang menonton dan apakah masih tayang — bahan untuk layar arsip dan
+untuk memilih mana yang mau dihapus.
+
+| Query | Default | Arti |
+|---|---|---|
+| `include_expired` | `false` | `true` menyertakan yang sudah lewat 24 jam |
+
+```json
+{ "data": [{
+    "id": "019f8e77-...",
+    "media_id": "019f8e70-...",
+    "media_kind": "image",
+    "media_url": "https://.../object/public/media/...",
+    "duration_ms": 0,
+    "view_count": 12,
+    "is_expired": false,
+    "created_at": "2026-07-23T07:30:00Z",
+    "expires_at": "2026-07-24T07:30:00Z"
+}], "meta": { "count": 1 } }
+```
+
+### `DELETE /api/v1/stories/{id}`
+
+Menghapus story sendiri, foto maupun video. Balasan `204`.
+
+`403` kalau story milik orang lain · `404` kalau tidak ada atau sudah dihapus.
+
+Dua hal yang perlu diketahui soal perilakunya:
+
+**Story disembunyikan, bukan dimusnahkan.** Barisnya tetap ada dengan
+`deleted_at` terisi. Permintaan moderasi bisa datang setelah story hilang dari
+layar, dan menghapus barisnya seketika membuat itu mustahil dijawab. Baris yang
+sudah lama kedaluwarsa dibuang terpisah setelah masa tenggang tujuh hari.
+
+**Medianya tidak ikut dihapus.** Satu `media_asset` boleh dipakai berkali-kali —
+dikirim ulang sebagai pesan, misalnya — sehingga menghapus byte-nya bersama
+story akan merusak tautan yang masih dipakai di tempat lain. Media yatim
+dibersihkan oleh job terpisah, juga setelah masa tenggang.
+
+Catatan tontonan (`story_views`) ikut dibuang: setelah story hilang, daftar
+penontonnya tidak berguna dan hanya menyimpan siapa melihat apa tanpa alasan.
 
 ---
 

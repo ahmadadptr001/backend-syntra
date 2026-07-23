@@ -16,7 +16,9 @@ import (
 type StoryService interface {
 	Create(ctx context.Context, userID, mediaID string, visibility story.Visibility) (story.Story, error)
 	ListGrouped(ctx context.Context, userID string) ([]story.Group, error)
+	ListMine(ctx context.Context, userID string, includeExpired bool) ([]story.Mine, error)
 	MarkViewed(ctx context.Context, storyID, userID string) error
+	Delete(ctx context.Context, storyID, userID string) error
 }
 
 // MediaURLResolver menerjemahkan storage key menjadi URL yang bisa dibuka klien.
@@ -158,8 +160,78 @@ func (h *Story) MarkViewed(w http.ResponseWriter, r *http.Request) {
 	httpx.NoContent(w)
 }
 
+type myStoryDTO struct {
+	ID         string    `json:"id"`
+	MediaID    string    `json:"media_id"`
+	MediaKind  string    `json:"media_kind"`
+	MediaURL   string    `json:"media_url"`
+	DurationMs int       `json:"duration_ms,omitempty"`
+	ViewCount  int       `json:"view_count"`
+	IsExpired  bool      `json:"is_expired"`
+	CreatedAt  time.Time `json:"created_at"`
+	ExpiresAt  time.Time `json:"expires_at"`
+}
+
+// ListMine menangani GET /api/v1/stories/me.
+//
+// Berbeda dari GET /stories yang menampilkan story orang lain: di sini yang
+// menarik adalah berapa orang menonton dan apakah masih tayang — bahan untuk
+// layar arsip dan untuk memilih mana yang mau dihapus.
+//
+// Query `include_expired=true` menyertakan yang sudah lewat 24 jam.
+func (h *Story) ListMine(w http.ResponseWriter, r *http.Request) {
+	includeExpired := r.URL.Query().Get("include_expired") == "true"
+
+	mine, err := h.svc.ListMine(r.Context(), auth.UserID(r.Context()), includeExpired)
+	if err != nil {
+		writeStoryError(w, r, err)
+		return
+	}
+
+	items := make([]myStoryDTO, 0, len(mine))
+	for _, m := range mine {
+		items = append(items, myStoryDTO{
+			ID:         m.ID,
+			MediaID:    m.MediaID,
+			MediaKind:  m.MediaKind,
+			MediaURL:   h.media.PublicURL(m.StorageKey),
+			DurationMs: m.DurationMs,
+			ViewCount:  m.ViewCount,
+			IsExpired:  m.IsExpired,
+			CreatedAt:  m.CreatedAt,
+			ExpiresAt:  m.ExpiresAt,
+		})
+	}
+
+	httpx.Page(w, items, pageMeta{Count: len(items)})
+}
+
+// Delete menangani DELETE /api/v1/stories/{id}.
+//
+// Hanya pemiliknya yang boleh. Story disembunyikan, bukan dimusnahkan —
+// permintaan moderasi bisa datang setelah story hilang dari layar. Medianya
+// juga tidak ikut dihapus karena satu media boleh dipakai di tempat lain;
+// yang yatim dibersihkan terpisah setelah masa tenggang.
+func (h *Story) Delete(w http.ResponseWriter, r *http.Request) {
+	storyID := r.PathValue("id")
+	if storyID == "" {
+		httpx.Fail(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "id story tidak boleh kosong")
+		return
+	}
+
+	if err := h.svc.Delete(r.Context(), storyID, auth.UserID(r.Context())); err != nil {
+		writeStoryError(w, r, err)
+		return
+	}
+
+	httpx.NoContent(w)
+}
+
 func writeStoryError(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
+	case errors.Is(err, story.ErrNotOwner):
+		httpx.Fail(w, r, http.StatusForbidden, httpx.CodeForbidden, "story atau media bukan milik kamu")
+
 	case errors.Is(err, story.ErrMediaNotOwn):
 		httpx.Fail(w, r, http.StatusForbidden, httpx.CodeForbidden, "media bukan milik kamu")
 

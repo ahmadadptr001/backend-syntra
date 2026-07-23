@@ -27,7 +27,7 @@ type storyRow struct {
 	AuthorID       string    `json:"author_id"`
 	AuthorUsername string    `json:"author_username"`
 	AuthorName     string    `json:"author_name"`
-	AuthorAvatar   *string   `json:"author_avatar"`
+	AuthorAvatar   string    `json:"author_avatar_key"`
 	MediaID        string    `json:"media_id"`
 	MediaKind      string    `json:"media_kind"`
 	StorageKey     string    `json:"storage_key"`
@@ -84,7 +84,7 @@ func (r *StoryRepository) ListActive(ctx context.Context, userID string) ([]stor
 			AuthorID:       row.AuthorID,
 			AuthorUsername: row.AuthorUsername,
 			AuthorName:     row.AuthorName,
-			AuthorAvatarID: deref(row.AuthorAvatar),
+			AuthorAvatarID: row.AuthorAvatar,
 			MediaID:        row.MediaID,
 			MediaKind:      row.MediaKind,
 			StorageKey:     row.StorageKey,
@@ -95,6 +95,66 @@ func (r *StoryRepository) ListActive(ctx context.Context, userID string) ([]stor
 		})
 	}
 	return out, nil
+}
+
+type myStoryRow struct {
+	ID         string    `json:"id"`
+	MediaID    string    `json:"media_id"`
+	MediaKind  string    `json:"media_kind"`
+	StorageKey string    `json:"storage_key"`
+	DurationMs *int      `json:"duration_ms"`
+	ViewCount  int       `json:"view_count"`
+	CreatedAt  time.Time `json:"created_at"`
+	ExpiresAt  time.Time `json:"expires_at"`
+	IsExpired  bool      `json:"is_expired"`
+}
+
+// ListMine memanggil fungsi list_my_stories.
+func (r *StoryRepository) ListMine(ctx context.Context, userID string, includeExpired bool) ([]story.Mine, error) {
+	actor, err := actorOption(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	var rows []myStoryRow
+	if err := r.client.RPC(ctx, "list_my_stories",
+		map[string]any{"p_include_expired": includeExpired}, &rows, actor); err != nil {
+		return nil, translateStory(err)
+	}
+
+	out := make([]story.Mine, 0, len(rows))
+	for _, row := range rows {
+		duration := 0
+		if row.DurationMs != nil {
+			duration = *row.DurationMs
+		}
+		out = append(out, story.Mine{
+			ID:         row.ID,
+			MediaID:    row.MediaID,
+			MediaKind:  row.MediaKind,
+			StorageKey: row.StorageKey,
+			DurationMs: duration,
+			ViewCount:  row.ViewCount,
+			CreatedAt:  row.CreatedAt,
+			ExpiresAt:  row.ExpiresAt,
+			IsExpired:  row.IsExpired,
+		})
+	}
+	return out, nil
+}
+
+// Delete memanggil fungsi delete_story.
+func (r *StoryRepository) Delete(ctx context.Context, storyID, userID string) error {
+	actor, err := actorOption(ctx, userID)
+	if err != nil {
+		return err
+	}
+
+	if err := r.client.RPC(ctx, "delete_story",
+		map[string]any{"p_story": storyID}, nil, actor); err != nil {
+		return translateStory(err)
+	}
+	return nil
 }
 
 // MarkViewed memanggil fungsi mark_story_viewed.
@@ -119,7 +179,10 @@ func translateStory(err error) error {
 
 	switch {
 	case apiErr.Code == sqlstateNotMember, apiErr.IsDeniedByRLS():
-		return story.ErrMediaNotOwn
+		// Dipakai dua fungsi: create_story menolak media orang lain,
+		// delete_story menolak story orang lain. Keduanya sama-sama 403 di
+		// lapisan transport, jadi pembedaannya tidak mengubah apa pun.
+		return story.ErrNotOwner
 	case apiErr.Code == sqlstateNotFound, apiErr.IsNotFound():
 		return story.ErrNotFound
 	case apiErr.Code == sqlstateInvalidData:

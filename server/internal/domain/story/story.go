@@ -19,6 +19,7 @@ var (
 	ErrNotFound     = errors.New("story: tidak ditemukan")
 	ErrInvalidInput = errors.New("story: input tidak valid")
 	ErrMediaNotOwn  = errors.New("story: media bukan milik pengguna ini")
+	ErrNotOwner     = errors.New("story: story bukan milik pengguna ini")
 )
 
 // Lifetime adalah umur sebuah story.
@@ -73,11 +74,30 @@ type Group struct {
 	UnviewedCount int
 }
 
+// Mine adalah story milik sendiri, termasuk yang sudah kedaluwarsa.
+//
+// Dipisahkan dari Story karena sudut pandangnya berbeda: di sini yang menarik
+// adalah berapa orang menontonnya dan apakah masih tayang — bukan apakah
+// pemanggil sudah menontonnya.
+type Mine struct {
+	ID         string
+	MediaID    string
+	MediaKind  string
+	StorageKey string
+	DurationMs int
+	ViewCount  int
+	CreatedAt  time.Time
+	ExpiresAt  time.Time
+	IsExpired  bool
+}
+
 // Repository adalah port penyimpanan.
 type Repository interface {
 	Create(ctx context.Context, s Story) error
 	ListActive(ctx context.Context, userID string) ([]Story, error)
+	ListMine(ctx context.Context, userID string, includeExpired bool) ([]Mine, error)
 	MarkViewed(ctx context.Context, storyID, userID string) error
+	Delete(ctx context.Context, storyID, userID string) error
 }
 
 // Service memuat alur bisnis story.
@@ -179,6 +199,29 @@ func (s *Service) MarkViewed(ctx context.Context, storyID, userID string) error 
 		return ErrInvalidInput
 	}
 	return s.repo.MarkViewed(ctx, storyID, userID)
+}
+
+// ListMine mengembalikan story milik pemanggil sendiri.
+//
+// includeExpired dipakai layar arsip; untuk story row cukup yang masih tayang.
+func (s *Service) ListMine(ctx context.Context, userID string, includeExpired bool) ([]Mine, error) {
+	if userID == "" {
+		return nil, ErrInvalidInput
+	}
+	return s.repo.ListMine(ctx, userID, includeExpired)
+}
+
+// Delete menghapus story milik pemanggil.
+//
+// Soft delete: barisnya tetap ada dengan deleted_at terisi, dan medianya tidak
+// ikut dibuang. Permintaan moderasi bisa datang setelah story hilang dari
+// layar, dan satu media boleh dipakai di tempat lain — menghapus byte-nya
+// seketika akan merusak tautan yang masih dipakai.
+func (s *Service) Delete(ctx context.Context, storyID, userID string) error {
+	if storyID == "" || userID == "" {
+		return ErrInvalidInput
+	}
+	return s.repo.Delete(ctx, storyID, userID)
 }
 
 func firstNonEmpty(values ...string) string {

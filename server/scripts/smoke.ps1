@@ -122,6 +122,10 @@ Test-Endpoint "POST /conversations (group)" POST "$api/conversations" `
 
 Write-Host "`n--- STORY ---"
 Test-Endpoint "GET  /stories" GET "$api/stories" $null
+Test-Endpoint "GET  /stories/me" GET "$api/stories/me" $null
+Test-Endpoint "GET  /stories/me?include_expired" GET "$api/stories/me?include_expired=true" $null
+Test-Endpoint "DEL  /stories/{id} (tidak ada -> 404)" DELETE `
+    "$api/stories/00000000-0000-0000-0000-000000000000" $null 404
 
 Write-Host "`n--- PENGGUNA & FOLLOW ---"
 Test-Endpoint "GET  /users/{username}" GET "$api/users/citra" $null
