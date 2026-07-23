@@ -184,6 +184,21 @@ Seluruh baris di tabel ini **diverifikasi jalan** lewat `server/scripts/smoke.ps
 | `DELETE` | `/api/v1/conversations/{id}/messages` | ✅ |
 | `DELETE` | `/api/v1/messages/{id}` | ✅ |
 | `DELETE` | `/api/v1/conversations/{id}/messages/{message_id}` | ✅ |
+| `GET` | `/api/v1/conversations/{id}` | ✅ |
+| `PATCH` | `/api/v1/conversations/{id}` | ✅ |
+| `POST` | `/api/v1/conversations/{id}/leave` | ✅ |
+| `PUT` | `/api/v1/conversations/{id}/mute` | ✅ |
+| `GET` | `/api/v1/conversations/{id}/members` | ✅ |
+| `POST` | `/api/v1/conversations/{id}/members` | ✅ |
+| `DELETE` | `/api/v1/conversations/{id}/members/{user_id}` | ✅ |
+| `PATCH` | `/api/v1/conversations/{id}/members/{user_id}` | ✅ |
+| `GET` | `/api/v1/conversations/{id}/reactions` | ✅ |
+| `PUT` | `/api/v1/messages/{id}/reaction` | ✅ |
+| `POST` | `/api/v1/calls` | ✅ |
+| `POST` | `/api/v1/calls/{id}/answer` | ✅ |
+| `POST` | `/api/v1/calls/{id}/decline` | ✅ |
+| `POST` | `/api/v1/calls/{id}/leave` | ✅ |
+| `GET` | `/api/v1/conversations/{id}/call` | ✅ |
 | `GET` | `/api/v1/stories` | ✅ |
 | `POST` | `/api/v1/stories` | ✅ |
 | `GET` | `/api/v1/stories/me` | ✅ |
@@ -340,6 +355,7 @@ Riwayat pesan, **terbaru dulu**.
     "type": "text",
     "body": "halo",
     "reply_to_id": null,
+    "attachments": [],
     "created_at": "2026-07-23T09:12:04Z",
     "edited_at": null,
     "is_deleted": false
@@ -347,6 +363,11 @@ Riwayat pesan, **terbaru dulu**.
   "meta": { "count": 1, "next_before": "019f8e5a-..." }
 }
 ```
+
+`attachments` adalah **daftar URL siap-pakai** hasil resolusi media yang
+dilampirkan (lihat §8). Kosong untuk pesan teks murni. Pesan `type: "system"`
+punya `sender_id: null` — itu pengumuman otomatis (anggota masuk/keluar, judul
+grup berubah); tampilkan rata tengah, bukan sebagai gelembung chat.
 
 Cursor memakai **id**, bukan `created_at`. Dua pesan bisa punya waktu yang
 identik di percakapan ramai, dan cursor waktu akan melewatkan salah satunya.
@@ -364,13 +385,20 @@ endpoint ini untuk percakapan yang sedang terbuka.
 Jalur cadangan mengirim pesan saat WebSocket sedang terputus.
 
 ```json
-{ "type": "text", "body": "halo", "reply_to_id": null }
+{ "type": "text", "body": "halo", "reply_to_id": null, "media_ids": [] }
 ```
 
 Balasan `201` berisi objek pesan yang sama bentuknya dengan di riwayat.
 
 Memanggil service yang sama persis dengan frame `message.send`, jadi validasi
 dan otorisasinya identik. Batas panjang teks: **4000 karakter**.
+
+**Melampirkan media (foto/video/dokumen/voice note).** Isi `media_ids` dengan
+id media yang **sudah dikonfirmasi** lewat alur tiga langkah di §8. Maksimum
+**10 lampiran** per pesan, dan hanya media milik pengirim yang diterima.
+Pesan boleh berupa media murni (tanpa `body`), atau teks + media sekaligus;
+kalau ada lampiran, `type` otomatis menjadi `media`. Balasan berisi
+`attachments` sebagai daftar URL siap tampil.
 
 ### `DELETE /api/v1/messages/{id}`
 
@@ -390,6 +418,223 @@ Mengosongkan riwayat percakapan **hanya untuk pemanggil**. Balasan `204`.
 Peserta lain tetap melihat percakapannya utuh — menghapus pesan dari layar orang
 lain bukan wewenang siapa pun di dalam percakapan. Yang dicatat adalah batas
 baca, jadi pesan baru setelah ini tetap muncul seperti biasa.
+
+---
+
+## 5b. Grup & anggota (fitur ala WhatsApp)
+
+Semua endpoint di bawah hanya berlaku untuk anggota percakapan; yang bukan
+anggota selalu `403`. Untuk aksi khusus admin/pemilik, non-admin juga `403`.
+
+### `GET /api/v1/conversations/{id}`
+
+Detail satu percakapan beserta peran pemanggil.
+
+```json
+{
+  "data": {
+    "id": "019f8e12-...",
+    "type": "group",
+    "title": "Tim Proyek",
+    "avatar_url": "https://.../avatar.jpg",
+    "member_count": 4,
+    "my_role": "admin",
+    "is_muted": false,
+    "created_at": "2026-07-20T02:00:00Z"
+  }
+}
+```
+
+`my_role` bernilai `owner`, `admin`, atau `member`. Untuk chat pribadi
+(`type: "direct"`) field grup seperti `title` bisa `null`.
+
+### `PATCH /api/v1/conversations/{id}`
+
+Mengubah judul dan/atau avatar grup. **Hanya admin/pemilik.** Hanya untuk grup —
+chat pribadi membalas `400`.
+
+```json
+{ "title": "Nama Baru", "avatar_media_id": "019f8e77-..." }
+```
+
+Kedua field opsional; kirim yang mau diubah saja. Perubahan menghasilkan pesan
+sistem di percakapan dan siaran `conversation.updated`. Balasan `200` berisi
+detail terbaru (bentuk sama dengan `GET`).
+
+### `POST /api/v1/conversations/{id}/leave`
+
+Keluar dari grup. Balasan `204`. Kalau yang keluar adalah **pemilik**,
+kepemilikan otomatis berpindah ke admin tertua (atau anggota tertua bila tak ada
+admin). Grup yang ditinggal kosong akan berhenti tampil bagi mantan anggota.
+Sebuah pesan sistem "X keluar" diterbitkan.
+
+### `PUT /api/v1/conversations/{id}/mute`
+
+Membisukan / membunyikan notifikasi percakapan **hanya untuk pemanggil**.
+
+```json
+{ "muted": true }
+```
+
+Balasan `204`. Ini preferensi personal — tidak memengaruhi anggota lain dan
+tidak menghentikan pesan tetap masuk, hanya menekan notifikasi push.
+
+### `GET /api/v1/conversations/{id}/members`
+
+Daftar anggota beserta peran.
+
+```json
+{
+  "data": [
+    { "user_id": "4e12...", "username": "budi", "display_name": "Budi",
+      "avatar_url": null, "role": "owner", "joined_at": "2026-07-20T02:00:00Z" }
+  ],
+  "meta": { "count": 1 }
+}
+```
+
+### `POST /api/v1/conversations/{id}/members`
+
+Menambah anggota ke grup. **Hanya admin/pemilik.**
+
+```json
+{ "user_ids": ["7a90...", "8b01..."] }
+```
+
+Balasan `200` berisi daftar anggota terbaru. Anggota yang pernah keluar akan
+dihidupkan kembali. Pengguna yang saling blokir dengan penambah dilewati diam-
+diam. Setiap penambahan menghasilkan pesan sistem dan siaran
+`conversation.updated`.
+
+### `DELETE /api/v1/conversations/{id}/members/{user_id}`
+
+Mengeluarkan anggota. **Hanya admin/pemilik.** Pemilik tidak bisa dikeluarkan
+(`403`). Balasan `204`, dengan pesan sistem "X dikeluarkan".
+
+### `PATCH /api/v1/conversations/{id}/members/{user_id}`
+
+Mengubah peran anggota. **Hanya pemilik.**
+
+```json
+{ "role": "admin" }
+```
+
+`role` bernilai `admin` atau `member` (pemilik tidak dipindahtangankan lewat
+sini — pakai transfer otomatis saat pemilik keluar). Balasan `204`.
+
+### `GET /api/v1/conversations/{id}/reactions`
+
+Reaksi emoji untuk sekumpulan pesan sekaligus, supaya klien tidak perlu satu
+permintaan per pesan.
+
+| Query | Catatan |
+|---|---|
+| `message_ids` | daftar id dipisah koma, wajib |
+
+```json
+{
+  "data": [
+    { "message_id": "019f8e5a-...", "user_id": "4e12...", "emoji": "👍",
+      "created_at": "2026-07-23T09:13:00Z" }
+  ],
+  "meta": { "count": 1 }
+}
+```
+
+### `PUT /api/v1/messages/{id}/reaction`
+
+Memberi / mengganti / menghapus reaksi pemanggil pada sebuah pesan. Satu orang
+punya paling banyak satu reaksi per pesan — mengirim emoji baru menggantikan
+yang lama.
+
+```json
+{ "emoji": "❤️" }
+```
+
+Kirim `emoji` kosong (`""`) atau `null` untuk **menghapus** reaksi. Balasan
+`204`. Pemanggil harus anggota percakapan pesan tersebut.
+
+---
+
+## 5c. Telepon & video call
+
+Panggilan terikat pada sebuah percakapan (chat pribadi maupun grup) dan memakai
+**LiveKit yang sama** dengan voice room (§ voice-rooms.md). Backend hanya
+mencatat sesi, mengotorisasi peserta, dan menerbitkan token — audio/video tidak
+pernah melewati backend. Kalau LiveKit belum dikonfigurasi, sesi tetap tercatat
+tetapi `sfu_token` kosong (tak ada suara/gambar).
+
+Siklusnya: **memulai → dering → jawab/tolak → selesai**. Saat panggilan baru
+dimulai, peserta lain menerima event realtime `call.incoming` di topik
+`conversation:<id>` — itulah yang membuat perangkat mereka berdering.
+
+### `POST /api/v1/calls`
+
+Memulai panggilan, atau **bergabung** ke panggilan yang sudah berlangsung di
+percakapan itu (mencegah dua panggilan paralel).
+
+```json
+{ "conversation_id": "019f8e12-...", "kind": "video" }
+```
+
+`kind` bernilai `audio` atau `video`. Balasan `201`:
+
+```json
+{
+  "data": {
+    "call_id": "019f9a01-...",
+    "sfu_room_id": "019f9a01-...",
+    "sfu_token": "eyJhbGciOi...",
+    "sfu_url": "wss://livekit.example",
+    "is_new": true
+  }
+}
+```
+
+`is_new: false` berarti pemanggil bergabung ke panggilan yang sudah ada.
+Sambungkan ke LiveKit memakai `sfu_url` + `sfu_token`. Untuk chat pribadi,
+memanggil pihak yang saling blokir dibalas `403`.
+
+### `POST /api/v1/calls/{id}/answer`
+
+Menjawab panggilan masuk. Menerbitkan token SFU untuk penjawab dan menyiarkan
+`call.answered`. Sertakan `?conversation_id=<id>` agar siaran terkirim.
+
+```json
+{ "data": { "call_id": "019f9a01-...", "sfu_room_id": "019f9a01-...",
+  "sfu_token": "eyJ...", "sfu_url": "wss://livekit.example" } }
+```
+
+### `POST /api/v1/calls/{id}/decline`
+
+Menolak panggilan masuk. Hanya efektif pada **chat pribadi** — di grup, satu
+orang menolak tidak mengakhiri panggilan bagi yang lain. Balasan `204`,
+menyiarkan `call.ended` (reason `declined`). Sertakan `?conversation_id=<id>`.
+
+### `POST /api/v1/calls/{id}/leave`
+
+Meninggalkan panggilan. Kalau tidak ada peserta tersisa, panggilan berakhir
+(`ended`, atau `missed` bila belum sempat dijawab). Balasan `204`, menyiarkan
+`call.ended` (reason `left`). Sertakan `?conversation_id=<id>`.
+
+### `GET /api/v1/conversations/{id}/call`
+
+Panggilan yang sedang berlangsung pada percakapan — untuk menampilkan tombol
+"gabung panggilan" atau banner "sedang menelepon".
+
+```json
+{
+  "data": {
+    "id": "019f9a01-...",
+    "kind": "video",
+    "status": "ongoing",
+    "initiator_id": "4e12...",
+    "started_at": "2026-07-24T10:00:00Z"
+  }
+}
+```
+
+`data: null` kalau tidak ada panggilan aktif.
 
 ---
 
@@ -925,6 +1170,10 @@ diganti dengan yang otoritatif dari server begitu `ack` tiba.
 | `room.speak_request` | ada yang mengangkat tangan (untuk host & moderator) |
 | `room.role_changed` | peran seseorang berubah — lihat `needs_rejoin` |
 | `room.join_decided` | permintaan masuk room disetujui/ditolak |
+| `conversation.updated` | grup berubah (judul/avatar/anggota) — muat ulang detail & anggota |
+| `call.incoming` | panggilan masuk pada percakapan — **berdering**, tampilkan layar terima/tolak |
+| `call.answered` | panggilan dijawab salah satu pihak |
+| `call.ended` | panggilan berakhir (`reason`: `declined`/`left`) — tutup layar & putuskan LiveKit |
 | `notification.new` | notifikasi baru untuk kamu (topik `user:<id>`) |
 
 Empat event `room.*` di atas disiarkan ke topik `room:<id>`. Bentuk payload dan

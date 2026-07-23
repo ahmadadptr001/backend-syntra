@@ -19,6 +19,7 @@ import (
 	"github.com/ahmadadptr001/backend-syntra/internal/auth"
 	"github.com/ahmadadptr001/backend-syntra/internal/config"
 	"github.com/ahmadadptr001/backend-syntra/internal/domain/account"
+	"github.com/ahmadadptr001/backend-syntra/internal/domain/call"
 	"github.com/ahmadadptr001/backend-syntra/internal/domain/chat"
 	"github.com/ahmadadptr001/backend-syntra/internal/domain/media"
 	"github.com/ahmadadptr001/backend-syntra/internal/domain/notification"
@@ -92,6 +93,7 @@ func New(ctx context.Context, cfg *config.Config, log *slog.Logger) (*App, error
 	notifRepo := repo.NewNotificationRepository(supa)
 	profileRepo := repo.NewProfileRepository(supa)
 	roomRepo := repo.NewRoomRepository(supa)
+	callRepo := repo.NewCallRepository(supa)
 	sfu := livekit.New(cfg.LiveKit.APIKey, cfg.LiveKit.APISecret, cfg.LiveKit.URL)
 	if !sfu.Configured() {
 		log.Warn("LiveKit belum dikonfigurasi: voice room bisa dibuat tapi TIDAK akan mengeluarkan suara",
@@ -104,6 +106,7 @@ func New(ctx context.Context, cfg *config.Config, log *slog.Logger) (*App, error
 	mediaService := media.NewService(mediaRepo, mediaStorage, cfg.Supabase.StorageBucket)
 	presenceService := presence.NewService(presenceStore, cfg.WS.PresenceTTL)
 	roomService := room.NewService(roomRepo, sfu, ws.NewPublisher(hub))
+	callService := call.NewService(callRepo, sfu, ws.NewPublisher(hub))
 	notifService := notification.NewService(notifRepo, ws.NewPublisher(hub))
 	profileService := account.NewProfileService(profileRepo, profileRepo)
 
@@ -137,13 +140,14 @@ func New(ctx context.Context, cfg *config.Config, log *slog.Logger) (*App, error
 		Account: handler.NewAccount(
 			account.NewService(accountRepo, accountRepo),
 		),
-		Chat:    handler.NewChat(chatService),
+		Chat:    handler.NewChat(chatService, mediaService),
 		Story:   handler.NewStory(storyService, mediaService),
 		User:    handler.NewUser(userService, mediaService),
 		Media:   handler.NewMedia(mediaService),
 		Room:    handler.NewRoom(roomService, mediaService),
 		Notif:   handler.NewNotification(notifService, mediaService),
 		Profile: handler.NewProfile(profileService, mediaService),
+		Call:    handler.NewCall(callService),
 	})
 
 	server := &http.Server{

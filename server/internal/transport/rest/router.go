@@ -39,6 +39,7 @@ type Deps struct {
 	Room    *handler.Room
 	Notif   *handler.Notification
 	Profile *handler.Profile
+	Call    *handler.Call
 }
 
 // NewRouter membangun handler HTTP lengkap dengan middleware.
@@ -72,6 +73,30 @@ func NewRouter(d Deps) http.Handler {
 		protected(http.HandlerFunc(d.Chat.SendMessage)))
 	mux.Handle("DELETE /api/v1/conversations/{id}/messages",
 		protected(http.HandlerFunc(d.Chat.ClearConversation)))
+
+	// info & manajemen grup
+	mux.Handle("GET /api/v1/conversations/{id}",
+		protected(http.HandlerFunc(d.Chat.GetConversation)))
+	mux.Handle("PATCH /api/v1/conversations/{id}",
+		protected(http.HandlerFunc(d.Chat.UpdateGroup)))
+	mux.Handle("POST /api/v1/conversations/{id}/leave",
+		protected(http.HandlerFunc(d.Chat.LeaveConversation)))
+	mux.Handle("PUT /api/v1/conversations/{id}/mute",
+		protected(http.HandlerFunc(d.Chat.Mute)))
+	mux.Handle("GET /api/v1/conversations/{id}/members",
+		protected(http.HandlerFunc(d.Chat.ListMembers)))
+	mux.Handle("POST /api/v1/conversations/{id}/members",
+		protected(http.HandlerFunc(d.Chat.AddMembers)))
+	mux.Handle("DELETE /api/v1/conversations/{id}/members/{user_id}",
+		protected(http.HandlerFunc(d.Chat.RemoveMember)))
+	mux.Handle("PATCH /api/v1/conversations/{id}/members/{user_id}",
+		protected(http.HandlerFunc(d.Chat.SetMemberRole)))
+	mux.Handle("GET /api/v1/conversations/{id}/reactions",
+		protected(http.HandlerFunc(d.Chat.Reactions)))
+
+	// reaksi pesan
+	mux.Handle("PUT /api/v1/messages/{id}/reaction",
+		protected(http.HandlerFunc(d.Chat.React)))
 	mux.Handle("DELETE /api/v1/messages/{id}",
 		protected(http.HandlerFunc(d.Chat.DeleteMessage)))
 	// Bentuk bersarang yang dipakai aplikasi — setara dengan yang di atas.
@@ -167,6 +192,22 @@ func NewRouter(d Deps) http.Handler {
 		protected(http.HandlerFunc(d.Room.Invite)))
 	mux.Handle("PATCH /api/v1/rooms/{id}/mute",
 		protected(http.HandlerFunc(d.Room.SetMuted)))
+
+	// --- telepon & video call ---
+	//
+	// Panggilan terikat pada percakapan. start memakai LiveKit yang sama dengan
+	// voice room; tanpa LiveKit, sesi tetap tercatat tapi tidak keluar
+	// suara/video (sfu_token kosong).
+	mux.Handle("POST /api/v1/calls",
+		protected(http.HandlerFunc(d.Call.Start)))
+	mux.Handle("POST /api/v1/calls/{id}/answer",
+		protected(http.HandlerFunc(d.Call.Answer)))
+	mux.Handle("POST /api/v1/calls/{id}/decline",
+		protected(http.HandlerFunc(d.Call.Decline)))
+	mux.Handle("POST /api/v1/calls/{id}/leave",
+		protected(http.HandlerFunc(d.Call.Leave)))
+	mux.Handle("GET /api/v1/conversations/{id}/call",
+		protected(http.HandlerFunc(d.Call.GetActive)))
 
 	// --- notifikasi ---
 	//
