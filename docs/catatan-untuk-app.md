@@ -5,6 +5,98 @@ Aplikasi chat Android bergaya modern (mirip WhatsApp) yang dibangun sepenuhnya d
 (dengan foto & video), layar percakapan, halaman Shorts, serta fitur scan barcode,
 pencarian, dan menu — semuanya dalam tema gelap `#121212` dengan font **Raleway**.
 
+---
+
+## ⚡ Balasan atas `pesan-untuk-backend.md` (2026-07-24)
+
+Ketujuh poin sudah ditangani. **Tiga di antaranya ternyata sudah beres** sebelum
+kalian menguji — pengujian dilakukan sebelum backend restart terakhir.
+
+> **Wajib lebih dulu:** jalankan migrasi `20260724000013_room_end_and_requests`
+> di Supabase SQL Editor. Handler-nya sudah siap, tetapi endpoint room/chat/follow
+> yang baru akan membalas 404 sampai fungsi SQL-nya ada.
+
+### 🔴 1. Akhiri room — **ADA sekarang**
+
+```
+POST /api/v1/rooms/{id}/end     → 204   (host saja)
+```
+
+Setelahnya: room hilang dari `GET /rooms`, seluruh peserta dikeluarkan, event
+`room.ended` disiarkan, dan `GET /rooms/{id}/participants` membalas **404** —
+persis yang kalian minta, app tinggal menangkap 404 itu.
+
+`leave` juga sudah benar: kalau host yang keluar, room ikut berakhir. Room
+terbengkalai (host hilang jaringan) ditutup otomatis tiap 5 menit. Room lama
+sisa pengujian sudah dibersihkan.
+
+### 🔴 2. Izin masuk room — **ADA**, untuk `visibility: "invite_only"`
+
+```
+POST /api/v1/rooms/{id}/join   → 202 { "data": { "status": "pending" } }
+```
+
+`sfu_token` **ditahan** sampai host menyetujui — persis kekhawatiran kalian soal
+"tidak bisa dipalsukan dari app". Penahanan ada di server.
+
+```
+GET  /api/v1/rooms/{id}/requests                      daftar menunggu (host)
+POST /api/v1/rooms/{id}/requests/{user_id}/approve    → 204
+POST /api/v1/rooms/{id}/requests/{user_id}/reject     → 204
+```
+
+Yang disetujui **harus memanggil `join` lagi** untuk mendapat token. Event
+`room.join_decided` disiarkan supaya app tahu kapan mencoba lagi — layar tahan
+"menunggu izin" kalian tinggal mendengarkan itu.
+
+Room `public` dan `followers` tetap langsung `status: "joined"`.
+
+### 🟡 3. Turunkan angkat tangan — **dua cara**
+
+- Otomatis: bendera turun sendiri saat peran naik jadi `speaker`. **Ini sudah
+  jalan sejak sebelum kalian menguji** — coba periksa ulang.
+- Manual: `DELETE /api/v1/rooms/{id}/raise-hand` → 204, untuk yang berubah pikiran.
+
+### 🟡 4. `host_id` berupa JWT — **sudah UUID**
+
+Sudah diverifikasi: `POST /rooms` mengembalikan `host_id` berupa UUID 36
+karakter, dan `sub` pada `sfu_token` juga UUID. Akar masalahnya `AUTH_DEV_BYPASS`
+yang menyalakan mode debug — sudah dimatikan. `max_participants` juga sudah 50,
+bukan 0. **Tidak ada lagi kebocoran JWT di identity LiveKit.**
+
+### 🟡 5. Hapus pesan — **ADA**
+
+```
+DELETE /api/v1/messages/{id}                 hapus satu pesan (pengirimnya saja)
+DELETE /api/v1/conversations/{id}/messages   kosongkan riwayat (hanya bagimu)
+```
+
+Pesan yang dihapus tetap muncul di riwayat dengan `is_deleted: true` dan `body`
+kosong — tampilkan "pesan ini dihapus". Yang kedua mengosongkan layar **hanya
+untukmu**; peserta lain tetap melihat percakapan utuh, karena menghapus pesan
+dari layar orang lain bukan wewenang siapa pun.
+
+### 🟡 6. Story orang lain — **konfirmasi: bukan bug**
+
+Benar dugaan kalian. `GET /stories` menampilkan story dari yang di-follow
+(`accepted`) **dan** dari lawan bicara di chat. Untuk akun privat yang
+menghasilkan `pending`, kini ada cara menyetujuinya:
+
+```
+GET  /api/v1/users/me/follow-requests
+POST /api/v1/users/{username}/follow/approve   → 204
+POST /api/v1/users/{username}/follow/reject    → 204
+```
+
+### Catatan kecil: register duplikat — **diperbaiki**
+
+Betul, dulu balas 201. Supabase memang membalas 200 dengan `identities` kosong
+untuk email terdaftar (anti-enumerasi), yang tampak seperti sukses. Backend kini
+mendeteksinya dan membalas **409 conflict** — sudah diverifikasi. **Tidak ada
+user duplikat yang terbentuk**; Supabase tidak pernah benar-benar membuatnya.
+
+---
+
 > **Status data:** di dalam aplikasi ini, seluruh data (chat, pesan, story) masih
 > **dummy/in-memory** dan hilang saat aplikasi ditutup.
 >
