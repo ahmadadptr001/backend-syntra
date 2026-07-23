@@ -21,6 +21,7 @@ import (
 	"github.com/ahmadadptr001/backend-syntra/internal/domain/account"
 	"github.com/ahmadadptr001/backend-syntra/internal/domain/chat"
 	"github.com/ahmadadptr001/backend-syntra/internal/domain/media"
+	"github.com/ahmadadptr001/backend-syntra/internal/domain/notification"
 	"github.com/ahmadadptr001/backend-syntra/internal/domain/presence"
 	"github.com/ahmadadptr001/backend-syntra/internal/domain/room"
 	"github.com/ahmadadptr001/backend-syntra/internal/domain/story"
@@ -88,6 +89,7 @@ func New(ctx context.Context, cfg *config.Config, log *slog.Logger) (*App, error
 	presenceStore := redisstore.NewPresence(rdb)
 
 	accountRepo := repo.NewAccountRepository(supa)
+	notifRepo := repo.NewNotificationRepository(supa)
 	roomRepo := repo.NewRoomRepository(supa)
 	sfu := livekit.New(cfg.LiveKit.APIKey, cfg.LiveKit.APISecret, cfg.LiveKit.URL)
 	if !sfu.Configured() {
@@ -101,6 +103,7 @@ func New(ctx context.Context, cfg *config.Config, log *slog.Logger) (*App, error
 	mediaService := media.NewService(mediaRepo, mediaStorage, cfg.Supabase.StorageBucket)
 	presenceService := presence.NewService(presenceStore, cfg.WS.PresenceTTL)
 	roomService := room.NewService(roomRepo, sfu, ws.NewPublisher(hub))
+	notifService := notification.NewService(notifRepo, ws.NewPublisher(hub))
 
 	// --- transport: websocket ---
 	wsRouter := ws.NewRouter(log)
@@ -137,6 +140,7 @@ func New(ctx context.Context, cfg *config.Config, log *slog.Logger) (*App, error
 		User:  handler.NewUser(userService, mediaService),
 		Media: handler.NewMedia(mediaService),
 		Room:  handler.NewRoom(roomService, mediaService),
+		Notif: handler.NewNotification(notifService, mediaService),
 	})
 
 	server := &http.Server{

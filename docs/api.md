@@ -7,6 +7,13 @@ bentuk data persisnya.
 Kalau dokumen ini berbeda dengan kode, **kode yang benar** — dan itu bug di
 dokumen ini yang harus diperbaiki.
 
+> **Untuk yang mengubah backend:** setiap penambahan, perubahan, atau
+> penghapusan endpoint **wajib ikut mengubah dokumen ini** — tabel ringkasan
+> rute di §3 *dan* bagian detail endpointnya. Aplikasi membangun kliennya dari
+> sini; endpoint yang tidak tercatat sama saja dengan tidak ada.
+>
+> Verifikasi dengan `server/scripts/smoke.ps1` sebelum menyatakan sesuatu jalan.
+
 - Base URL lokal: `http://localhost:8081` (lewat nginx) atau `:8080` (langsung)
 - Semua path REST berawalan `/api/v1`
 - Semua timestamp **RFC3339 UTC**, contoh `2026-07-23T09:12:04Z`
@@ -176,6 +183,7 @@ Seluruh baris di tabel ini **diverifikasi jalan** lewat `server/scripts/smoke.ps
 | `POST` | `/api/v1/stories` | ✅ |
 | `GET` | `/api/v1/stories/me` | ✅ |
 | `POST` | `/api/v1/stories/{id}/view` | ✅ |
+| `GET` | `/api/v1/stories/{id}/viewers` | ✅ |
 | `DELETE` | `/api/v1/stories/{id}` | ✅ |
 | `GET` | `/api/v1/users/{username}` | ✅ |
 | `POST` | `/api/v1/users/{username}/follow` | ✅ |
@@ -191,6 +199,9 @@ Seluruh baris di tabel ini **diverifikasi jalan** lewat `server/scripts/smoke.ps
 | `GET` | `/api/v1/rooms/{id}/speak-requests` | ✅ |
 | `POST` | `/api/v1/rooms/{id}/invite` | ✅ |
 | `PATCH` | `/api/v1/rooms/{id}/mute` | ✅ |
+| `GET` | `/api/v1/notifications` | ✅ |
+| `GET` | `/api/v1/notifications/unread-count` | ✅ |
+| `POST` | `/api/v1/notifications/read` | ✅ |
 | `POST` | `/api/v1/media/upload-url` | ✅ |
 | `POST` | `/api/v1/media/{id}/confirm` | ✅ |
 | `GET` | `/api/v1/ws` | ✅ |
@@ -426,6 +437,47 @@ untuk memilih mana yang mau dihapus.
 }], "meta": { "count": 1 } }
 ```
 
+### `GET /api/v1/stories/{id}/viewers`
+
+Siapa saja yang menonton sebuah story, **terbaru dulu**.
+
+**Hanya pemilik story yang boleh melihatnya** — `403` untuk siapa pun yang lain.
+Membukanya ke penonton lain berarti memberi tahu siapa saja yang menyimak
+seseorang, dan itu tidak pernah mereka setujui.
+
+| Query | Default | Catatan |
+|---|---|---|
+| `limit` | 50 | maksimum 200 |
+| `before_at` | — | RFC3339; ambil dari `meta.next_before_at` |
+| `before_id` | — | ambil dari `meta.next_before_id` |
+
+```json
+{
+  "data": [{
+    "user_id": "d5891ae6-...",
+    "username": "citra",
+    "display_name": "Citra Dewi",
+    "avatar_url": "https://.../object/public/media/...",
+    "viewed_at": "2026-07-23T08:41:12Z"
+  }],
+  "meta": {
+    "count": 1,
+    "next_before_at": "2026-07-23T08:41:12Z",
+    "next_before_id": "d5891ae6-..."
+  }
+}
+```
+
+**Cursor-nya berpasangan — kirim `before_at` DAN `before_id` bersamaan.** Dua
+orang bisa menonton pada milidetik yang sama, dan cursor berbasis waktu saja
+akan melewatkan salah satunya saat berpindah halaman.
+
+Untuk **jumlah** penonton, tidak perlu memanggil endpoint ini: `view_count`
+sudah ada di [`GET /api/v1/stories/me`](#get-apiv1storiesme). Panggil `viewers`
+hanya saat pengguna membuka daftarnya.
+
+`404` kalau story tidak ada atau sudah dihapus.
+
 ### `DELETE /api/v1/stories/{id}`
 
 Menghapus story sendiri, foto maupun video. Balasan `204`.
@@ -517,6 +569,80 @@ Daftar orang yang diikuti, urut menurut nama tampil.
 > **Kalau story seseorang tidak muncul di story row, periksa endpoint ini
 > dulu.** `GET /stories` hanya menampilkan story dari orang yang ada di daftar
 > ini dengan status `accepted` — itu penyebab paling sering, bukan bug di story.
+
+---
+
+## 7b. Notifikasi
+
+### `GET /api/v1/notifications`
+
+Terbaru dulu. Cursor `before` adalah **id notifikasi** — id memakai UUIDv7 yang
+terurut waktu, jadi tidak melewatkan baris ketika dua notifikasi lahir pada
+milidetik yang sama.
+
+| Query | Default | Catatan |
+|---|---|---|
+| `limit` | 30 | maksimum 100 |
+| `before` | — | id notifikasi dari `meta.next_before` |
+
+```json
+{ "data": [{
+    "id": "019f8f93-...",
+    "type": "follow",
+    "actor_id": "6f77d0ad-...",
+    "actor_username": "budi",
+    "actor_name": "Budi Santoso",
+    "actor_avatar_url": "https://.../object/public/media/...",
+    "subject_type": "user",
+    "subject_id": "d5891ae6-...",
+    "is_read": false,
+    "created_at": "2026-07-23T09:12:04Z"
+}], "meta": { "count": 1, "next_before": "019f8f93-..." } }
+```
+
+`type`: `follow` · `like` · `comment` · `mention` · `story_reply` · `room_live` · `system`
+
+### `GET /api/v1/notifications/unread-count`
+
+```json
+{ "data": { "unread": 7 } }
+```
+
+Dipisah dari daftarnya karena badge dipanggil jauh lebih sering dan jawabannya
+jauh lebih kecil.
+
+### `POST /api/v1/notifications/read`
+
+```jsonc
+{ "notification_id": "019f8f93-..." }   // satu
+{ }                                      // semua
+```
+
+```json
+{ "data": { "marked": 7 } }
+```
+
+### Event realtime `notification.new`
+
+Disiarkan ke topik `user:<id>` saat notifikasi baru dibuat:
+
+```json
+{ "type": "notification.new", "data": {
+    "id": "019f8f93-...",
+    "type": "follow",
+    "actor_id": "6f77d0ad-...",
+    "subject_type": "user",
+    "subject_id": "d5891ae6-...",
+    "created_at": "2026-07-23T09:12:04Z"
+} }
+```
+
+Payload-nya ringkas dengan sengaja — cukup untuk menaikkan badge dan
+menampilkan toast. Untuk isi lengkapnya, muat `GET /notifications`.
+
+Notifikasi **tidak dibuat** kalau penerimanya adalah pelaku itu sendiri, atau
+kalau salah satu pihak memblokir yang lain. Keputusan itu ada di sisi database
+supaya aturannya tidak terduplikasi.
 
 ---
 
@@ -651,10 +777,10 @@ diganti dengan yang otoritatif dari server begitu `ack` tiba.
 | `typing` | anggota lain sedang mengetik |
 | `presence.update` | seseorang menjadi online/offline |
 | `room.message` | pesan baru di voice room yang sedang dilanggan |
+| `notification.new` | notifikasi baru untuk kamu (topik `user:<id>`) |
 
-Belum diimplementasikan meski konstantanya ada: `room.join`, `room.leave`,
-`notification.new`. Mengirimnya dibalas `unknown_type`. (Masuk dan keluar room
-dilakukan lewat REST, bukan frame — lihat `voice-rooms.md`.)
+Masuk dan keluar voice room dilakukan lewat **REST**, bukan frame — lihat
+[`voice-rooms.md`](voice-rooms.md).
 
 ### Topik dan otorisasinya
 

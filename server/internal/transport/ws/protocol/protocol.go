@@ -34,10 +34,12 @@ const (
 	// seluruh percakapannya lenyap — tidak ada riwayat untuk dimuat, dan tidak
 	// ada endpoint untuk mengambilnya kembali.
 	TypeRoomChat = "room.chat"
-
-	TypeRoomJoin  = "room.join"
-	TypeRoomLeave = "room.leave"
 )
+
+// Catatan: masuk dan keluar voice room dilakukan lewat REST
+// (POST /rooms/{id}/join dan /leave), bukan lewat frame. Konstanta
+// "room.join"/"room.leave" pernah ada di sini tanpa handler, sehingga
+// mengirimnya hanya menghasilkan "unknown_type" — menyesatkan, jadi dibuang.
 
 // Tipe frame dari server ke klien.
 const (

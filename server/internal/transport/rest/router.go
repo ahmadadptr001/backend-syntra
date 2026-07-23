@@ -37,6 +37,7 @@ type Deps struct {
 	User    *handler.User
 	Media   *handler.Media
 	Room    *handler.Room
+	Notif   *handler.Notification
 }
 
 // NewRouter membangun handler HTTP lengkap dengan middleware.
@@ -78,6 +79,8 @@ func NewRouter(d Deps) http.Handler {
 		protected(http.HandlerFunc(d.Story.ListMine)))
 	mux.Handle("POST /api/v1/stories/{id}/view",
 		protected(http.HandlerFunc(d.Story.MarkViewed)))
+	mux.Handle("GET /api/v1/stories/{id}/viewers",
+		protected(http.HandlerFunc(d.Story.Viewers)))
 	mux.Handle("DELETE /api/v1/stories/{id}",
 		protected(http.HandlerFunc(d.Story.Delete)))
 
@@ -117,6 +120,17 @@ func NewRouter(d Deps) http.Handler {
 		protected(http.HandlerFunc(d.Room.Invite)))
 	mux.Handle("PATCH /api/v1/rooms/{id}/mute",
 		protected(http.HandlerFunc(d.Room.SetMuted)))
+
+	// --- notifikasi ---
+	//
+	// unread-count dipisah dari daftarnya karena badge dipanggil jauh lebih
+	// sering dan jawabannya jauh lebih kecil.
+	mux.Handle("GET /api/v1/notifications",
+		protected(http.HandlerFunc(d.Notif.List)))
+	mux.Handle("GET /api/v1/notifications/unread-count",
+		protected(http.HandlerFunc(d.Notif.UnreadCount)))
+	mux.Handle("POST /api/v1/notifications/read",
+		protected(http.HandlerFunc(d.Notif.MarkRead)))
 
 	// --- media ---
 	mux.Handle("POST /api/v1/media/upload-url",
