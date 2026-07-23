@@ -156,6 +156,7 @@ type Repository interface {
 	CreateGroup(ctx context.Context, userID, title string, memberIDs []string) (string, error)
 	DeleteMessage(ctx context.Context, messageID, userID string) error
 	ClearConversation(ctx context.Context, conversationID, userID string) error
+	DeleteConversation(ctx context.Context, conversationID, userID string) error
 
 	GetConversation(ctx context.Context, conversationID, userID string) (ConversationDetail, error)
 	ListMembers(ctx context.Context, conversationID, userID string) ([]Member, error)

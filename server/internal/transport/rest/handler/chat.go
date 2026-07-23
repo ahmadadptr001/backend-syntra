@@ -22,6 +22,7 @@ type ChatService interface {
 	CreateGroup(ctx context.Context, userID, title string, memberIDs []string) (string, error)
 	DeleteMessage(ctx context.Context, messageID, userID string) error
 	ClearConversation(ctx context.Context, conversationID, userID string) error
+	DeleteConversation(ctx context.Context, conversationID, userID string) error
 
 	GetConversation(ctx context.Context, conversationID, userID string) (chat.ConversationDetail, error)
 	Members(ctx context.Context, conversationID, userID string) ([]chat.Member, error)
@@ -357,6 +358,25 @@ func (h *Chat) ClearConversation(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.svc.ClearConversation(r.Context(), conversationID, auth.UserID(r.Context())); err != nil {
+		writeDomainError(w, r, err)
+		return
+	}
+	httpx.NoContent(w)
+}
+
+// DeleteConversation menangani DELETE /api/v1/conversations/{id}.
+//
+// Menghapus seluruh obrolan dari daftar pemanggil — untuk chat pribadi maupun
+// grup. Berbeda dari DELETE .../messages yang hanya mengosongkan pesan tapi
+// percakapan tetap ada di daftar. Peserta lain tidak terpengaruh.
+func (h *Chat) DeleteConversation(w http.ResponseWriter, r *http.Request) {
+	conversationID := r.PathValue("id")
+	if conversationID == "" {
+		httpx.Fail(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "id percakapan tidak boleh kosong")
+		return
+	}
+
+	if err := h.svc.DeleteConversation(r.Context(), conversationID, auth.UserID(r.Context())); err != nil {
 		writeDomainError(w, r, err)
 		return
 	}

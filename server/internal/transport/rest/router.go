@@ -74,6 +74,8 @@ func NewRouter(d Deps) http.Handler {
 		protected(http.HandlerFunc(d.Chat.SendMessage)))
 	mux.Handle("DELETE /api/v1/conversations/{id}/messages",
 		protected(http.HandlerFunc(d.Chat.ClearConversation)))
+	mux.Handle("DELETE /api/v1/conversations/{id}",
+		protected(http.HandlerFunc(d.Chat.DeleteConversation)))
 
 	// info & manajemen grup
 	mux.Handle("GET /api/v1/conversations/{id}",

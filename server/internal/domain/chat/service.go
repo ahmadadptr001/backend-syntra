@@ -338,6 +338,23 @@ func (s *Service) ClearConversation(ctx context.Context, conversationID, userID 
 	return s.repo.ClearConversation(ctx, conversationID, userID)
 }
 
+// DeleteConversation menghapus seluruh obrolan dari sisi pemanggil.
+//
+// Untuk grup: keluar (dengan alih kepemilikan bila owner) lalu sembunyikan dari
+// daftar. Untuk direct: sembunyikan dari daftar dan bersihkan tampilannya.
+// Peserta lain tidak terpengaruh. Untuk grup, siaran conversation.updated
+// memberi tahu anggota tersisa bahwa pemanggil telah keluar.
+func (s *Service) DeleteConversation(ctx context.Context, conversationID, userID string) error {
+	if conversationID == "" || userID == "" {
+		return ErrInvalidInput
+	}
+	if err := s.repo.DeleteConversation(ctx, conversationID, userID); err != nil {
+		return err
+	}
+	s.broadcastConversation(ctx, conversationID)
+	return nil
+}
+
 // MarkRead menandai percakapan sudah dibaca sampai messageID tertentu.
 func (s *Service) MarkRead(ctx context.Context, conversationID, userID, messageID string) error {
 	if conversationID == "" || userID == "" || messageID == "" {

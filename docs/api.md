@@ -182,6 +182,7 @@ Seluruh baris di tabel ini **diverifikasi jalan** lewat `server/scripts/smoke.ps
 | `GET` | `/api/v1/conversations/{id}/messages` | ✅ |
 | `POST` | `/api/v1/conversations/{id}/messages` | ✅ |
 | `DELETE` | `/api/v1/conversations/{id}/messages` | ✅ |
+| `DELETE` | `/api/v1/conversations/{id}` | ✅ |
 | `DELETE` | `/api/v1/messages/{id}` | ✅ |
 | `DELETE` | `/api/v1/conversations/{id}/messages/{message_id}` | ✅ |
 | `GET` | `/api/v1/conversations/{id}` | ✅ |
@@ -437,6 +438,22 @@ Mengosongkan riwayat percakapan **hanya untuk pemanggil**. Balasan `204`.
 Peserta lain tetap melihat percakapannya utuh — menghapus pesan dari layar orang
 lain bukan wewenang siapa pun di dalam percakapan. Yang dicatat adalah batas
 baca, jadi pesan baru setelah ini tetap muncul seperti biasa.
+
+### `DELETE /api/v1/conversations/{id}`
+
+Menghapus **seluruh obrolan** dari daftar pemanggil — berlaku untuk chat pribadi
+maupun grup. Balasan `204`. Berbeda dari `DELETE .../messages` yang hanya
+mengosongkan pesan tapi percakapan tetap di daftar.
+
+- **Chat pribadi**: percakapan hilang dari daftar pemanggil dan tampilannya
+  dibersihkan. Lawan bicara tidak terpengaruh. Mengirim pesan lagi ke orang yang
+  sama (`POST /conversations {type:direct}`) **menghidupkan kembali** percakapan
+  yang sama (tanpa duplikat), memperlihatkan pesan baru sesudah titik hapus.
+- **Grup**: pemanggil **keluar** dari grup (anggota lain mendapat pesan sistem
+  "X keluar"; bila pemanggil owner, kepemilikan diwariskan ke admin/anggota
+  terlama) lalu grup hilang dari daftarnya.
+
+Ini aksi **personal** — tidak menghapus percakapan untuk peserta lain.
 
 ---
 

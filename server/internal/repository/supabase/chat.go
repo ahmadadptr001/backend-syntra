@@ -225,6 +225,19 @@ func (r *ChatRepository) ClearConversation(ctx context.Context, conversationID, 
 	return nil
 }
 
+// DeleteConversation memanggil fungsi delete_conversation.
+func (r *ChatRepository) DeleteConversation(ctx context.Context, conversationID, userID string) error {
+	actor, err := actorOption(ctx, userID)
+	if err != nil {
+		return err
+	}
+	if err := r.client.RPC(ctx, "delete_conversation",
+		map[string]any{"p_conversation": conversationID}, nil, actor); err != nil {
+		return translate(err)
+	}
+	return nil
+}
+
 // IsMember memanggil fungsi is_conversation_member.
 func (r *ChatRepository) IsMember(ctx context.Context, conversationID, userID string) (bool, error) {
 	actor, err := actorOption(ctx, userID)
