@@ -302,6 +302,7 @@ Daftar chat, terbaru dulu. Inilah sumber data layar utama.
     "title": "Reza Ramadhan",
     "avatar_media_id": "019f8e12-...",
     "counterpart_id": "4e127292-...",
+    "counterpart_username": "reza",
     "counterpart_last_read_id": "019f8e5a-...",
     "unread_count": 3,
     "last_message_preview": "oke besok ya",
@@ -320,6 +321,9 @@ Catatan penting untuk klien:
   tidak perlu mencari siapa peserta lain. Untuk grup berisi judul grup.
 - **`counterpart_id`** hanya ada pada `direct`. Pakai ini untuk kueri presence
   dan untuk membuka profil.
+- **`counterpart_username`** (hanya `direct`) — nama lawan bicara untuk layar
+  panggilan masuk, dan untuk laporkan/blokir langsung dari daftar chat tanpa
+  membuka percakapannya dulu.
 - **`last_message_type`** berguna saat `last_message_preview` kosong: media
   tidak punya teks, jadi tampilkan "📷 Foto" berdasarkan tipe.
 - **`counterpart_last_read_id`** adalah bahan indikator ✓✓ untuk chat `direct`.

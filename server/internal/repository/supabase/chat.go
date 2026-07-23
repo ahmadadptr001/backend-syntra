@@ -60,6 +60,7 @@ type conversationRow struct {
 	Title           string  `json:"title"`
 	AvatarMediaID   *string `json:"avatar_media_id"`
 	CounterpartID   *string `json:"counterpart_id"`
+	CounterpartUser *string `json:"counterpart_username"`
 	CounterpartRead *string `json:"counterpart_last_read"`
 	UnreadCount     int     `json:"unread_count"`
 	LastMessagePrev string  `json:"last_message_preview"`
@@ -97,6 +98,7 @@ func (r *ChatRepository) ListConversations(ctx context.Context, userID string, l
 			Title:                 row.Title,
 			AvatarMediaID:         deref(row.AvatarMediaID),
 			CounterpartID:         deref(row.CounterpartID),
+			CounterpartUsername:   deref(row.CounterpartUser),
 			CounterpartLastReadID: deref(row.CounterpartRead),
 			UnreadCount:           row.UnreadCount,
 			LastMessagePreview:    row.LastMessagePrev,

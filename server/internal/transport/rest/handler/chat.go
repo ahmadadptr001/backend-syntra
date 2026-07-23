@@ -53,6 +53,10 @@ type conversationDTO struct {
 	AvatarMediaID string `json:"avatar_media_id,omitempty"`
 	CounterpartID string `json:"counterpart_id,omitempty"`
 
+	// Username lawan bicara (hanya percakapan direct). Dipakai layar panggilan
+	// masuk & aksi laporkan/blokir dari daftar chat.
+	CounterpartUsername string `json:"counterpart_username,omitempty"`
+
 	// Bandingkan id pesan dengan nilai ini untuk menggambar ✓✓: id memakai
 	// UUIDv7 yang terurut waktu, jadi `pesan.id <= counterpart_last_read_id`
 	// berarti sudah dibaca. Hanya ada pada percakapan `direct`.
@@ -105,6 +109,7 @@ func (h *Chat) ListConversations(w http.ResponseWriter, r *http.Request) {
 			Title:                 c.Title,
 			AvatarMediaID:         c.AvatarMediaID,
 			CounterpartID:         c.CounterpartID,
+			CounterpartUsername:   c.CounterpartUsername,
 			CounterpartLastReadID: c.CounterpartLastReadID,
 			UnreadCount:           c.UnreadCount,
 			LastMessagePrev:       c.LastMessagePreview,

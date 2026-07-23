@@ -67,6 +67,11 @@ type Conversation struct {
 	AvatarMediaID string
 	CounterpartID string // kosong untuk percakapan grup
 
+	// CounterpartUsername adalah username lawan bicara pada percakapan direct —
+	// dipakai layar panggilan masuk untuk menampilkan nama, dan fitur
+	// laporkan/blokir dari daftar chat tanpa membuka percakapannya dulu.
+	CounterpartUsername string
+
 	// CounterpartLastReadID adalah pesan terakhir yang sudah dibaca lawan
 	// bicara. Karena id memakai UUIDv7 yang terurut waktu, klien cukup
 	// membandingkan id pesannya dengan nilai ini untuk memutuskan ✓✓ —
