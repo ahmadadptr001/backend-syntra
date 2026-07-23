@@ -23,7 +23,41 @@ import (
 var (
 	ErrInvalidInput = errors.New("media: input tidak valid")
 	ErrUnknownKind  = errors.New("media: jenis media tidak dikenal")
+	ErrTooLarge     = errors.New("media: berkas terlalu besar")
+	ErrTooLong      = errors.New("media: durasi media terlalu panjang")
 )
+
+// Batas ukuran per jenis. Byte-nya memang tidak masuk Postgres — hanya storage
+// key yang dicatat — tetapi tanpa batas, bucket object storage bisa membengkak
+// tak terkendali begitu reels ramai. Batas ditegakkan saat konfirmasi, satu-
+// satunya titik tempat server tahu ukuran akhir berkas.
+const (
+	MaxImageBytes     = 10 << 20  // 10 MB
+	MaxVideoBytes     = 100 << 20 // 100 MB
+	MaxAudioBytes     = 20 << 20  // 20 MB
+	MaxVoiceNoteBytes = 16 << 20  // 16 MB
+
+	// Durasi video dibatasi supaya berkas tetap kecil dan sejalan dengan format
+	// short-video. Story dan reels sama-sama pendek; klip panjang tidak punya
+	// tempat di sini.
+	MaxVideoDurationMs = 3 * 60 * 1000 // 3 menit
+)
+
+// MaxBytes mengembalikan batas ukuran untuk sebuah jenis media.
+func (k Kind) MaxBytes() int64 {
+	switch k {
+	case KindImage:
+		return MaxImageBytes
+	case KindVideo:
+		return MaxVideoBytes
+	case KindAudio:
+		return MaxAudioBytes
+	case KindVoiceNote:
+		return MaxVoiceNoteBytes
+	default:
+		return 0
+	}
+}
 
 // Kind mengikuti enum MEDIA_ASSETS.kind di docs/erd.md.
 type Kind string
@@ -131,6 +165,10 @@ func (s *Service) Confirm(ctx context.Context, a Asset) error {
 		return ErrUnknownKind
 	case a.SizeBytes <= 0:
 		return ErrInvalidInput
+	case a.SizeBytes > a.Kind.MaxBytes():
+		return ErrTooLarge
+	case a.Kind == KindVideo && a.DurationMs > MaxVideoDurationMs:
+		return ErrTooLong
 	}
 
 	if a.MimeType == "" {

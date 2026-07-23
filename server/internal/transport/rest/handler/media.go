@@ -143,6 +143,14 @@ func writeMediaError(w http.ResponseWriter, r *http.Request, err error) {
 	case errors.Is(err, media.ErrInvalidInput):
 		httpx.Fail(w, r, http.StatusBadRequest, httpx.CodeBadRequest, err.Error())
 
+	case errors.Is(err, media.ErrTooLarge):
+		httpx.Fail(w, r, http.StatusRequestEntityTooLarge, httpx.CodeBadRequest,
+			"berkas terlalu besar: maks 10MB gambar, 100MB video, 20MB audio, 16MB voice note")
+
+	case errors.Is(err, media.ErrTooLong):
+		httpx.Fail(w, r, http.StatusBadRequest, httpx.CodeBadRequest,
+			"durasi video terlalu panjang: maksimum 3 menit")
+
 	default:
 		middleware.WithError(r, err)
 		httpx.Fail(w, r, http.StatusInternalServerError, httpx.CodeInternal, "terjadi kesalahan internal")
