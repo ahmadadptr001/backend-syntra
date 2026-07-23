@@ -107,6 +107,8 @@ type Repository interface {
 	MarkRead(ctx context.Context, conversationID, userID, messageID string) error
 	CreateDirect(ctx context.Context, userID, otherID string) (string, error)
 	CreateGroup(ctx context.Context, userID, title string, memberIDs []string) (string, error)
+	DeleteMessage(ctx context.Context, messageID, userID string) error
+	ClearConversation(ctx context.Context, conversationID, userID string) error
 }
 
 // Publisher adalah port siaran realtime. Diimplementasikan oleh

@@ -120,9 +120,24 @@ type SpeakRequest struct {
 	RequestedAt time.Time
 }
 
+// JoinStatus membedakan berhasil masuk dari menunggu persetujuan host.
+type JoinStatus string
+
+const (
+	JoinStatusJoined  JoinStatus = "joined"
+	JoinStatusPending JoinStatus = "pending"
+)
+
 // Join adalah hasil bergabung: peran, dan bekal untuk menyambung ke SFU.
 type Join struct {
-	RoomID    string
+	RoomID string
+
+	// Status "pending" berarti permintaan masuk antre menunggu keputusan host.
+	// Token SFU sengaja tidak diterbitkan dalam keadaan itu — kalau diterbitkan,
+	// penantian di ruang tunggu hanya jadi hiasan yang bisa dilewati siapa pun
+	// yang memanggil endpoint langsung.
+	Status JoinStatus
+
 	Role      Role
 	SFURoomID string
 
@@ -138,7 +153,11 @@ type Join struct {
 type Repository interface {
 	Create(ctx context.Context, r Room) error
 	List(ctx context.Context) ([]Room, error)
-	Join(ctx context.Context, roomID string) (Role, string, error)
+	Join(ctx context.Context, roomID string) (JoinStatus, Role, string, error)
+	End(ctx context.Context, roomID string) error
+	CancelSpeakRequest(ctx context.Context, roomID string) error
+	ListJoinRequests(ctx context.Context, roomID string) ([]SpeakRequest, error)
+	DecideJoinRequest(ctx context.Context, roomID, userID string, approve bool) error
 
 	// Leave mengembalikan true kalau yang keluar adalah host, yang berarti
 	// room ikut berakhir dan peserta lain harus diberi tahu.
@@ -168,6 +187,7 @@ const (
 	EventRoomParticipants = "room.participants"
 	EventSpeakRequest     = "room.speak_request"
 	EventRoleChanged      = "room.role_changed"
+	EventJoinDecided      = "room.join_decided"
 )
 
 // TokenIssuer menerbitkan kredensial masuk ke media server.
@@ -290,9 +310,14 @@ func (s *Service) Join(ctx context.Context, roomID, userID, identity string) (Jo
 		return Join{}, ErrInvalidInput
 	}
 
-	role, sfuRoomID, err := s.repo.Join(ctx, roomID)
+	status, role, sfuRoomID, err := s.repo.Join(ctx, roomID)
 	if err != nil {
 		return Join{}, err
+	}
+
+	// Menunggu persetujuan: tidak ada peran, tidak ada token.
+	if status == JoinStatusPending {
+		return Join{RoomID: roomID, Status: status}, nil
 	}
 
 	if sfuRoomID == "" {
@@ -301,6 +326,7 @@ func (s *Service) Join(ctx context.Context, roomID, userID, identity string) (Jo
 
 	result := Join{
 		RoomID:     roomID,
+		Status:     JoinStatusJoined,
 		Role:       role,
 		SFURoomID:  sfuRoomID,
 		CanPublish: role.CanPublish(),
@@ -321,6 +347,65 @@ func (s *Service) Join(ctx context.Context, roomID, userID, identity string) (Jo
 	result.SFUToken = token
 	result.SFUURL = url
 	return result, nil
+}
+
+// End menutup room atas permintaan host, tanpa harus keluar lebih dulu.
+func (s *Service) End(ctx context.Context, roomID string) error {
+	if roomID == "" {
+		return ErrInvalidInput
+	}
+
+	if err := s.repo.End(ctx, roomID); err != nil {
+		return err
+	}
+
+	s.notify(ctx, roomID, EventRoomEnded, map[string]any{
+		"room_id": roomID,
+		"reason":  "host_ended",
+	})
+	return nil
+}
+
+// CancelSpeakRequest menurunkan tangan yang sudah diangkat.
+func (s *Service) CancelSpeakRequest(ctx context.Context, roomID string) error {
+	if roomID == "" {
+		return ErrInvalidInput
+	}
+
+	if err := s.repo.CancelSpeakRequest(ctx, roomID); err != nil {
+		return err
+	}
+	s.notifyParticipants(ctx, roomID)
+	return nil
+}
+
+// JoinRequests mengembalikan permintaan masuk yang menunggu keputusan.
+func (s *Service) JoinRequests(ctx context.Context, roomID string) ([]SpeakRequest, error) {
+	if roomID == "" {
+		return nil, ErrInvalidInput
+	}
+	return s.repo.ListJoinRequests(ctx, roomID)
+}
+
+// DecideJoinRequest menyetujui atau menolak permintaan masuk.
+//
+// Yang disetujui harus memanggil join lagi untuk mendapat token SFU — pada saat
+// keputusan dibuat, ia belum tentu masih menunggu di layar.
+func (s *Service) DecideJoinRequest(ctx context.Context, roomID, userID string, approve bool) error {
+	if roomID == "" || userID == "" {
+		return ErrInvalidInput
+	}
+
+	if err := s.repo.DecideJoinRequest(ctx, roomID, userID, approve); err != nil {
+		return err
+	}
+
+	s.notify(ctx, roomID, EventJoinDecided, map[string]any{
+		"room_id":  roomID,
+		"user_id":  userID,
+		"approved": approve,
+	})
+	return nil
 }
 
 // Leave mengeluarkan pemanggil. Kalau ia host, room ikut berakhir dan seluruh

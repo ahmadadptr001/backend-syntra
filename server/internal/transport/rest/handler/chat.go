@@ -20,6 +20,8 @@ type ChatService interface {
 	SendMessage(ctx context.Context, in chat.SendMessageInput) (chat.Message, error)
 	StartDirect(ctx context.Context, userID, otherID string) (string, error)
 	CreateGroup(ctx context.Context, userID, title string, memberIDs []string) (string, error)
+	DeleteMessage(ctx context.Context, messageID, userID string) error
+	ClearConversation(ctx context.Context, conversationID, userID string) error
 }
 
 // Chat menangani endpoint percakapan.
@@ -271,6 +273,43 @@ func (h *Chat) SendMessage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	httpx.Created(w, toMessageDTO(msg))
+}
+
+// DeleteMessage menangani DELETE /api/v1/messages/{id}.
+//
+// Hanya pengirimnya. Soft delete — barisnya tetap muncul di riwayat dengan
+// is_deleted=true supaya urutan pesan tidak berlubang bagi peserta lain.
+func (h *Chat) DeleteMessage(w http.ResponseWriter, r *http.Request) {
+	messageID := r.PathValue("id")
+	if messageID == "" {
+		httpx.Fail(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "id pesan tidak boleh kosong")
+		return
+	}
+
+	if err := h.svc.DeleteMessage(r.Context(), messageID, auth.UserID(r.Context())); err != nil {
+		writeDomainError(w, r, err)
+		return
+	}
+	httpx.NoContent(w)
+}
+
+// ClearConversation menangani DELETE /api/v1/conversations/{id}/messages.
+//
+// Mengosongkan riwayat HANYA untuk pemanggil. Peserta lain tetap melihat
+// percakapannya utuh — menghapus pesan dari layar orang lain bukan wewenang
+// siapa pun di dalam percakapan.
+func (h *Chat) ClearConversation(w http.ResponseWriter, r *http.Request) {
+	conversationID := r.PathValue("id")
+	if conversationID == "" {
+		httpx.Fail(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "id percakapan tidak boleh kosong")
+		return
+	}
+
+	if err := h.svc.ClearConversation(r.Context(), conversationID, auth.UserID(r.Context())); err != nil {
+		writeDomainError(w, r, err)
+		return
+	}
+	httpx.NoContent(w)
 }
 
 // writeDomainError memetakan error domain ke status HTTP.

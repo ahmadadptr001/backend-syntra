@@ -177,6 +177,29 @@ func (s *Service) SendMessage(ctx context.Context, in SendMessageInput) (Message
 	return msg, nil
 }
 
+// DeleteMessage menghapus pesan milik pemanggil.
+//
+// Soft delete: barisnya tetap dikirim ke klien dengan is_deleted=true supaya
+// urutan riwayat tidak berlubang, tetapi isinya dikosongkan.
+func (s *Service) DeleteMessage(ctx context.Context, messageID, userID string) error {
+	if messageID == "" || userID == "" {
+		return ErrInvalidInput
+	}
+	return s.repo.DeleteMessage(ctx, messageID, userID)
+}
+
+// ClearConversation mengosongkan riwayat percakapan HANYA untuk pemanggil.
+//
+// Menghapus pesan orang lain dari layar mereka bukan wewenang siapa pun di
+// percakapan, jadi yang dicatat adalah batas baca: pesan lama disembunyikan
+// dari pemanggil, sementara peserta lain tetap melihat riwayatnya utuh.
+func (s *Service) ClearConversation(ctx context.Context, conversationID, userID string) error {
+	if conversationID == "" || userID == "" {
+		return ErrInvalidInput
+	}
+	return s.repo.ClearConversation(ctx, conversationID, userID)
+}
+
 // MarkRead menandai percakapan sudah dibaca sampai messageID tertentu.
 func (s *Service) MarkRead(ctx context.Context, conversationID, userID, messageID string) error {
 	if conversationID == "" || userID == "" || messageID == "" {

@@ -69,6 +69,10 @@ func NewRouter(d Deps) http.Handler {
 		protected(http.HandlerFunc(d.Chat.ListMessages)))
 	mux.Handle("POST /api/v1/conversations/{id}/messages",
 		protected(http.HandlerFunc(d.Chat.SendMessage)))
+	mux.Handle("DELETE /api/v1/conversations/{id}/messages",
+		protected(http.HandlerFunc(d.Chat.ClearConversation)))
+	mux.Handle("DELETE /api/v1/messages/{id}",
+		protected(http.HandlerFunc(d.Chat.DeleteMessage)))
 
 	// --- story ---
 	mux.Handle("GET /api/v1/stories",
@@ -92,6 +96,12 @@ func NewRouter(d Deps) http.Handler {
 	// terbaca oleh manusia.
 	mux.Handle("GET /api/v1/users/me/following",
 		protected(http.HandlerFunc(d.User.ListFollowing)))
+	mux.Handle("GET /api/v1/users/me/follow-requests",
+		protected(http.HandlerFunc(d.User.FollowRequests)))
+	mux.Handle("POST /api/v1/users/{username}/follow/approve",
+		protected(http.HandlerFunc(d.User.ApproveFollow)))
+	mux.Handle("POST /api/v1/users/{username}/follow/reject",
+		protected(http.HandlerFunc(d.User.RejectFollow)))
 	mux.Handle("GET /api/v1/users/{username}",
 		protected(http.HandlerFunc(d.User.GetByUsername)))
 	mux.Handle("POST /api/v1/users/{username}/follow",
@@ -108,12 +118,22 @@ func NewRouter(d Deps) http.Handler {
 		protected(http.HandlerFunc(d.Room.Join)))
 	mux.Handle("POST /api/v1/rooms/{id}/leave",
 		protected(http.HandlerFunc(d.Room.Leave)))
+	mux.Handle("POST /api/v1/rooms/{id}/end",
+		protected(http.HandlerFunc(d.Room.End)))
+	mux.Handle("GET /api/v1/rooms/{id}/requests",
+		protected(http.HandlerFunc(d.Room.JoinRequests)))
+	mux.Handle("POST /api/v1/rooms/{id}/requests/{user_id}/approve",
+		protected(http.HandlerFunc(d.Room.ApproveJoin)))
+	mux.Handle("POST /api/v1/rooms/{id}/requests/{user_id}/reject",
+		protected(http.HandlerFunc(d.Room.RejectJoin)))
 	mux.Handle("GET /api/v1/rooms/{id}/participants",
 		protected(http.HandlerFunc(d.Room.Participants)))
 	mux.Handle("PATCH /api/v1/rooms/{id}/participants",
 		protected(http.HandlerFunc(d.Room.SetRole)))
 	mux.Handle("POST /api/v1/rooms/{id}/raise-hand",
 		protected(http.HandlerFunc(d.Room.RequestSpeak)))
+	mux.Handle("DELETE /api/v1/rooms/{id}/raise-hand",
+		protected(http.HandlerFunc(d.Room.CancelSpeakRequest)))
 	mux.Handle("GET /api/v1/rooms/{id}/speak-requests",
 		protected(http.HandlerFunc(d.Room.SpeakRequests)))
 	mux.Handle("POST /api/v1/rooms/{id}/invite",

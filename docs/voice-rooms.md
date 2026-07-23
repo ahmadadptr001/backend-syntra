@@ -112,6 +112,11 @@ Semua butuh `Authorization: Bearer <jwt>`.
 | `GET` | `/api/v1/rooms/{id}/participants` | daftar peserta, host paling atas |
 | `PATCH` | `/api/v1/rooms/{id}/participants` | ubah peran (host/moderator saja) |
 | `POST` | `/api/v1/rooms/{id}/raise-hand` | minta izin bicara |
+| `POST` | `/api/v1/rooms/{id}/end` | **akhiri room** (host saja) |
+| `DELETE` | `/api/v1/rooms/{id}/raise-hand` | batalkan angkat tangan |
+| `GET` | `/api/v1/rooms/{id}/requests` | permintaan masuk yang menunggu (host) |
+| `POST` | `/api/v1/rooms/{id}/requests/{user_id}/approve` | izinkan masuk |
+| `POST` | `/api/v1/rooms/{id}/requests/{user_id}/reject` | tolak |
 | `PATCH` | `/api/v1/rooms/{id}/mute` | ubah status bisu sendiri |
 
 ### `GET /api/v1/rooms`
@@ -182,6 +187,60 @@ boleh. Peran `host` tidak bisa diberikan — ia melekat pada pembuat room.
 
 Setelah ini, klien yang bersangkutan **harus memanggil `join` lagi** untuk
 mendapat token dengan `canPublish: true`.
+
+### `POST /api/v1/rooms/{id}/end`
+
+Mengakhiri room. **Hanya host** — `403` untuk yang lain. Balasan `204`.
+
+Berbeda dari `leave`: host bisa menutup room tanpa harus keluar lebih dulu.
+Efeknya sama — room hilang dari `GET /rooms`, seluruh peserta dikeluarkan, dan
+event `room.ended` disiarkan.
+
+Setelah room berakhir:
+
+| Endpoint | Balasan |
+|---|---|
+| `GET /rooms/{id}/participants` | **404** — peserta tahu harus keluar |
+| `POST /rooms/{id}/join` | 404 |
+
+Room yang ditinggalkan tanpa sempat diakhiri ditutup otomatis setiap 5 menit,
+jadi room hantu tidak menumpuk meski host kehilangan jaringan.
+
+### Persetujuan masuk — room `invite_only`
+
+Untuk `visibility: "invite_only"`, `join` **tidak langsung berhasil**:
+
+```json
+HTTP 202
+{ "data": { "room_id": "...", "status": "pending" } }
+```
+
+`sfu_token` sengaja tidak diterbitkan dalam keadaan itu. Kalau diterbitkan,
+ruang tunggu hanya jadi hiasan — siapa pun yang memanggil endpoint langsung
+tetap bisa masuk dan bicara. Inilah alasan penahanan harus di server, bukan di
+aplikasi.
+
+Host memutuskan:
+
+```
+GET  /api/v1/rooms/{id}/requests                      daftar yang menunggu
+POST /api/v1/rooms/{id}/requests/{user_id}/approve    → 204
+POST /api/v1/rooms/{id}/requests/{user_id}/reject     → 204
+```
+
+Yang disetujui **harus memanggil `join` lagi** untuk mendapat token — saat
+keputusan dibuat, ia belum tentu masih menunggu di layar. Event
+`room.join_decided` disiarkan ke topik room supaya klien tahu kapan harus
+mencoba lagi.
+
+Room `public` dan `followers` tetap langsung `status: "joined"`.
+
+### `DELETE /api/v1/rooms/{id}/raise-hand`
+
+Membatalkan angkat tangan. Balasan `204`.
+
+Bendera juga turun sendiri saat peran naik jadi `speaker`, jadi endpoint ini
+hanya untuk peminta yang berubah pikiran.
 
 ### `PATCH /api/v1/rooms/{id}/mute`
 

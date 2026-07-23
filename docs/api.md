@@ -181,6 +181,8 @@ Seluruh baris di tabel ini **diverifikasi jalan** lewat `server/scripts/smoke.ps
 | `POST` | `/api/v1/conversations` | ✅ |
 | `GET` | `/api/v1/conversations/{id}/messages` | ✅ |
 | `POST` | `/api/v1/conversations/{id}/messages` | ✅ |
+| `DELETE` | `/api/v1/conversations/{id}/messages` | ✅ |
+| `DELETE` | `/api/v1/messages/{id}` | ✅ |
 | `GET` | `/api/v1/stories` | ✅ |
 | `POST` | `/api/v1/stories` | ✅ |
 | `GET` | `/api/v1/stories/me` | ✅ |
@@ -191,13 +193,21 @@ Seluruh baris di tabel ini **diverifikasi jalan** lewat `server/scripts/smoke.ps
 | `POST` | `/api/v1/users/{username}/follow` | ✅ |
 | `DELETE` | `/api/v1/users/{username}/follow` | ✅ |
 | `GET` | `/api/v1/users/me/following` | ✅ |
+| `GET` | `/api/v1/users/me/follow-requests` | ✅ |
+| `POST` | `/api/v1/users/{username}/follow/approve` | ✅ |
+| `POST` | `/api/v1/users/{username}/follow/reject` | ✅ |
 | `GET` | `/api/v1/rooms` | ✅ |
 | `POST` | `/api/v1/rooms` | ✅ |
 | `POST` | `/api/v1/rooms/{id}/join` | ✅ |
 | `POST` | `/api/v1/rooms/{id}/leave` | ✅ |
+| `POST` | `/api/v1/rooms/{id}/end` | ✅ |
+| `GET` | `/api/v1/rooms/{id}/requests` | ✅ |
+| `POST` | `/api/v1/rooms/{id}/requests/{user_id}/approve` | ✅ |
+| `POST` | `/api/v1/rooms/{id}/requests/{user_id}/reject` | ✅ |
 | `GET` | `/api/v1/rooms/{id}/participants` | ✅ |
 | `PATCH` | `/api/v1/rooms/{id}/participants` | ✅ |
 | `POST` | `/api/v1/rooms/{id}/raise-hand` | ✅ |
+| `DELETE` | `/api/v1/rooms/{id}/raise-hand` | ✅ |
 | `GET` | `/api/v1/rooms/{id}/speak-requests` | ✅ |
 | `POST` | `/api/v1/rooms/{id}/invite` | ✅ |
 | `PATCH` | `/api/v1/rooms/{id}/mute` | ✅ |
@@ -351,6 +361,22 @@ Balasan `201` berisi objek pesan yang sama bentuknya dengan di riwayat.
 
 Memanggil service yang sama persis dengan frame `message.send`, jadi validasi
 dan otorisasinya identik. Batas panjang teks: **4000 karakter**.
+
+### `DELETE /api/v1/messages/{id}`
+
+Menghapus satu pesan. Hanya pengirimnya — `403` untuk yang lain. Balasan `204`.
+
+**Soft delete.** Barisnya tetap muncul di riwayat dengan `is_deleted: true` dan
+`body` kosong, supaya urutan pesan tidak berlubang bagi peserta lain. Tampilkan
+sebagai "pesan ini dihapus".
+
+### `DELETE /api/v1/conversations/{id}/messages`
+
+Mengosongkan riwayat percakapan **hanya untuk pemanggil**. Balasan `204`.
+
+Peserta lain tetap melihat percakapannya utuh — menghapus pesan dari layar orang
+lain bukan wewenang siapa pun di dalam percakapan. Yang dicatat adalah batas
+baca, jadi pesan baru setelah ini tetap muncul seperti biasa.
 
 ---
 
@@ -568,6 +594,20 @@ Daftar orang yang diikuti, urut menurut nama tampil.
 }], "meta": { "count": 1 } }
 ```
 
+### `GET /api/v1/users/me/follow-requests`
+
+Permintaan follow yang menunggu keputusan — hanya relevan untuk akun privat
+(`is_private: true`). Bentuknya sama dengan `me/following`.
+
+### `POST /api/v1/users/{username}/follow/approve`
+### `POST /api/v1/users/{username}/follow/reject`
+
+Menyetujui atau menolak. Balasan `204`.
+
+Tanpa kedua endpoint ini, akun privat menghasilkan status `pending` yang
+menggantung selamanya: peminta tidak pernah menjadi pengikut, jadi tidak pernah
+bisa melihat story. Kalau aplikasi belum punya layar ini, pakai akun publik.
+
 > **Kalau story seseorang tidak muncul di story row, periksa endpoint ini
 > dulu.** `GET /stories` hanya menampilkan story dari orang yang ada di daftar
 > ini dengan status `accepted` — itu penyebab paling sering, bukan bug di story.
@@ -783,6 +823,7 @@ diganti dengan yang otoritatif dari server begitu `ack` tiba.
 | `room.participants` | daftar peserta berubah — dikirim utuh, ganti daftar lokal |
 | `room.speak_request` | ada yang mengangkat tangan (untuk host & moderator) |
 | `room.role_changed` | peran seseorang berubah — lihat `needs_rejoin` |
+| `room.join_decided` | permintaan masuk room disetujui/ditolak |
 | `notification.new` | notifikasi baru untuk kamu (topik `user:<id>`) |
 
 Empat event `room.*` di atas disiarkan ke topik `room:<id>`. Bentuk payload dan

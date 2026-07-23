@@ -40,6 +40,7 @@ type roomRow struct {
 }
 
 type joinRow struct {
+	Status    string  `json:"status"`
 	Role      string  `json:"role"`
 	SFURoomID *string `json:"sfu_room_id"`
 }
@@ -116,23 +117,92 @@ func (r *RoomRepository) List(ctx context.Context) ([]room.Room, error) {
 	return out, nil
 }
 
-// Join memanggil fungsi join_room dan mengembalikan peran yang diberikan.
-func (r *RoomRepository) Join(ctx context.Context, roomID string) (room.Role, string, error) {
+// Join memanggil fungsi join_room.
+//
+// Mengembalikan status "pending" untuk room invite_only yang permintaannya
+// masih menunggu keputusan host.
+func (r *RoomRepository) Join(ctx context.Context, roomID string) (room.JoinStatus, room.Role, string, error) {
 	actor, err := callerOption(ctx)
 	if err != nil {
-		return "", "", err
+		return "", "", "", err
 	}
 
 	var rows []joinRow
 	if err := r.client.RPC(ctx, "join_room",
 		map[string]any{"p_room": roomID}, &rows, actor); err != nil {
-		return "", "", translateRoom(err)
+		return "", "", "", translateRoom(err)
 	}
 	if len(rows) == 0 {
-		return "", "", room.ErrNotFound
+		return "", "", "", room.ErrNotFound
 	}
 
-	return room.Role(rows[0].Role), deref(rows[0].SFURoomID), nil
+	return room.JoinStatus(rows[0].Status), room.Role(rows[0].Role), deref(rows[0].SFURoomID), nil
+}
+
+// End memanggil fungsi end_room_by_host.
+func (r *RoomRepository) End(ctx context.Context, roomID string) error {
+	actor, err := callerOption(ctx)
+	if err != nil {
+		return err
+	}
+	if err := r.client.RPC(ctx, "end_room_by_host",
+		map[string]any{"p_room": roomID}, nil, actor); err != nil {
+		return translateRoom(err)
+	}
+	return nil
+}
+
+// CancelSpeakRequest memanggil fungsi cancel_speak_request.
+func (r *RoomRepository) CancelSpeakRequest(ctx context.Context, roomID string) error {
+	actor, err := callerOption(ctx)
+	if err != nil {
+		return err
+	}
+	if err := r.client.RPC(ctx, "cancel_speak_request",
+		map[string]any{"p_room": roomID}, nil, actor); err != nil {
+		return translateRoom(err)
+	}
+	return nil
+}
+
+// ListJoinRequests memanggil fungsi list_join_requests.
+func (r *RoomRepository) ListJoinRequests(ctx context.Context, roomID string) ([]room.SpeakRequest, error) {
+	actor, err := callerOption(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var rows []speakRequestRow
+	if err := r.client.RPC(ctx, "list_join_requests",
+		map[string]any{"p_room": roomID}, &rows, actor); err != nil {
+		return nil, translateRoom(err)
+	}
+
+	out := make([]room.SpeakRequest, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, room.SpeakRequest{
+			UserID:      row.UserID,
+			Username:    row.Username,
+			DisplayName: row.DisplayName,
+			AvatarKey:   row.AvatarKey,
+			RequestedAt: row.RequestedAt,
+		})
+	}
+	return out, nil
+}
+
+// DecideJoinRequest memanggil fungsi decide_join_request.
+func (r *RoomRepository) DecideJoinRequest(ctx context.Context, roomID, userID string, approve bool) error {
+	actor, err := callerOption(ctx)
+	if err != nil {
+		return err
+	}
+
+	args := map[string]any{"p_room": roomID, "p_user": userID, "p_approve": approve}
+	if err := r.client.RPC(ctx, "decide_join_request", args, nil, actor); err != nil {
+		return translateRoom(err)
+	}
+	return nil
 }
 
 // Leave memanggil fungsi leave_room.

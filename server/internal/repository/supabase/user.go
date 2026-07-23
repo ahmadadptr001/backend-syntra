@@ -132,6 +132,46 @@ func (r *UserRepository) ListFollowing(ctx context.Context) ([]user.Profile, err
 	return out, nil
 }
 
+// ListFollowRequests memanggil fungsi list_follow_requests.
+func (r *UserRepository) ListFollowRequests(ctx context.Context) ([]user.Profile, error) {
+	actor, err := callerOption(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var rows []followingRow
+	if err := r.client.RPC(ctx, "list_follow_requests", map[string]any{}, &rows, actor); err != nil {
+		return nil, translateUser(err)
+	}
+
+	out := make([]user.Profile, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, user.Profile{
+			ID:            row.ID,
+			Username:      row.Username,
+			DisplayName:   row.DisplayName,
+			AvatarMediaID: deref(row.AvatarMediaID),
+			FollowStatus:  user.FollowPending,
+			FollowedAt:    row.CreatedAt,
+		})
+	}
+	return out, nil
+}
+
+// DecideFollowRequest memanggil fungsi decide_follow_request.
+func (r *UserRepository) DecideFollowRequest(ctx context.Context, followerID string, approve bool) error {
+	actor, err := callerOption(ctx)
+	if err != nil {
+		return err
+	}
+
+	args := map[string]any{"p_follower": followerID, "p_approve": approve}
+	if err := r.client.RPC(ctx, "decide_follow_request", args, nil, actor); err != nil {
+		return translateUser(err)
+	}
+	return nil
+}
+
 // callerOption mengambil JWT pemanggil tanpa memeriksa kecocokan id.
 //
 // Dipakai operasi yang memang bertindak atas nama siapa pun yang sedang login,

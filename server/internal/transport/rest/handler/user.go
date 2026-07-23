@@ -17,6 +17,8 @@ type UserService interface {
 	Follow(ctx context.Context, username string) (user.Profile, error)
 	Unfollow(ctx context.Context, username string) (user.Profile, error)
 	ListFollowing(ctx context.Context) ([]user.Profile, error)
+	FollowRequests(ctx context.Context) ([]user.Profile, error)
+	DecideFollowRequest(ctx context.Context, username string, approve bool) error
 }
 
 // User menangani endpoint direktori pengguna dan graf pertemanan.
@@ -128,6 +130,43 @@ func (h *User) ListFollowing(w http.ResponseWriter, r *http.Request) {
 	}
 
 	httpx.Page(w, items, pageMeta{Count: len(items)})
+}
+
+// FollowRequests menangani GET /api/v1/users/me/follow-requests.
+//
+// Hanya relevan untuk akun privat. Tanpa ini, status `pending` menggantung
+// selamanya — pemintanya tidak pernah menjadi pengikut, jadi tidak pernah
+// bisa melihat story.
+func (h *User) FollowRequests(w http.ResponseWriter, r *http.Request) {
+	profiles, err := h.svc.FollowRequests(r.Context())
+	if err != nil {
+		writeUserError(w, r, err)
+		return
+	}
+
+	items := make([]profileDTO, 0, len(profiles))
+	for _, p := range profiles {
+		items = append(items, toProfileDTO(p))
+	}
+	httpx.Page(w, items, pageMeta{Count: len(items)})
+}
+
+// ApproveFollow menangani POST /api/v1/users/{username}/follow/approve.
+func (h *User) ApproveFollow(w http.ResponseWriter, r *http.Request) {
+	h.decideFollow(w, r, true)
+}
+
+// RejectFollow menangani POST /api/v1/users/{username}/follow/reject.
+func (h *User) RejectFollow(w http.ResponseWriter, r *http.Request) {
+	h.decideFollow(w, r, false)
+}
+
+func (h *User) decideFollow(w http.ResponseWriter, r *http.Request, approve bool) {
+	if err := h.svc.DecideFollowRequest(r.Context(), r.PathValue("username"), approve); err != nil {
+		writeUserError(w, r, err)
+		return
+	}
+	httpx.NoContent(w)
 }
 
 func writeUserError(w http.ResponseWriter, r *http.Request, err error) {

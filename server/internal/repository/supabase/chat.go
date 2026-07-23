@@ -193,6 +193,32 @@ func (r *ChatRepository) CreateGroup(ctx context.Context, userID, title string, 
 	return conversationID, nil
 }
 
+// DeleteMessage memanggil fungsi delete_message.
+func (r *ChatRepository) DeleteMessage(ctx context.Context, messageID, userID string) error {
+	actor, err := actorOption(ctx, userID)
+	if err != nil {
+		return err
+	}
+	if err := r.client.RPC(ctx, "delete_message",
+		map[string]any{"p_message": messageID}, nil, actor); err != nil {
+		return translate(err)
+	}
+	return nil
+}
+
+// ClearConversation memanggil fungsi clear_conversation.
+func (r *ChatRepository) ClearConversation(ctx context.Context, conversationID, userID string) error {
+	actor, err := actorOption(ctx, userID)
+	if err != nil {
+		return err
+	}
+	if err := r.client.RPC(ctx, "clear_conversation",
+		map[string]any{"p_conversation": conversationID}, nil, actor); err != nil {
+		return translate(err)
+	}
+	return nil
+}
+
 // IsMember memanggil fungsi is_conversation_member.
 func (r *ChatRepository) IsMember(ctx context.Context, conversationID, userID string) (bool, error) {
 	actor, err := actorOption(ctx, userID)

@@ -58,11 +58,42 @@ func (e gotrueError) text() string {
 }
 
 // SignUp mendaftarkan akun baru di Supabase Auth.
+//
+// Supabase TIDAK membalas error untuk email yang sudah terdaftar — ia membalas
+// 200 dengan objek pengguna palsu ber-`identities` kosong. Itu perilaku
+// anti-enumerasi yang disengaja: penyerang tidak bisa memakai signup untuk
+// menebak email mana yang punya akun.
+//
+// Tetapi bagi klien yang sah, balasan itu terlihat seperti pendaftaran
+// berhasil — dan sempat membuat tim aplikasi menerima 201 padahal seharusnya
+// 409. Pemeriksaan di bawah mengembalikannya menjadi kegagalan yang jujur.
 func (r *AccountRepository) SignUp(ctx context.Context, email, password string) (account.Session, error) {
-	return r.callGoTrue(ctx, "/auth/v1/signup", map[string]any{
+	session, raw, err := r.callGoTrueRaw(ctx, "/auth/v1/signup", map[string]any{
 		"email":    email,
 		"password": password,
 	}, "")
+	if err != nil {
+		return account.Session{}, err
+	}
+
+	var probe struct {
+		Identities *[]json.RawMessage `json:"identities"`
+		User       *struct {
+			Identities *[]json.RawMessage `json:"identities"`
+		} `json:"user"`
+	}
+	_ = json.Unmarshal(raw, &probe)
+
+	identities := probe.Identities
+	if identities == nil && probe.User != nil {
+		identities = probe.User.Identities
+	}
+
+	if identities != nil && len(*identities) == 0 {
+		return account.Session{}, account.ErrEmailTaken
+	}
+
+	return session, nil
 }
 
 // SignIn menukar email dan kata sandi dengan sesi.
@@ -87,15 +118,22 @@ func (r *AccountRepository) SignOut(ctx context.Context, accessToken string) err
 }
 
 func (r *AccountRepository) callGoTrue(ctx context.Context, path string, body map[string]any, bearer string) (account.Session, error) {
+	s, _, err := r.callGoTrueRaw(ctx, path, body, bearer)
+	return s, err
+}
+
+// callGoTrueRaw juga mengembalikan body mentah, dibutuhkan SignUp untuk
+// memeriksa `identities` — penanda email yang sudah terdaftar.
+func (r *AccountRepository) callGoTrueRaw(ctx context.Context, path string, body map[string]any, bearer string) (account.Session, []byte, error) {
 	payload, err := json.Marshal(body)
 	if err != nil {
-		return account.Session{}, err
+		return account.Session{}, nil, err
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
 		r.client.BaseURL()+path, strings.NewReader(string(payload)))
 	if err != nil {
-		return account.Session{}, err
+		return account.Session{}, nil, err
 	}
 
 	req.Header.Set("apikey", r.client.AnonKey())
@@ -110,7 +148,7 @@ func (r *AccountRepository) callGoTrue(ctx context.Context, path string, body ma
 
 	resp, err := r.client.HTTPClient().Do(req)
 	if err != nil {
-		return account.Session{}, fmt.Errorf("account: gagal menghubungi Supabase: %w", err)
+		return account.Session{}, nil, fmt.Errorf("account: gagal menghubungi Supabase: %w", err)
 	}
 	defer func() {
 		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4<<10))
@@ -119,21 +157,21 @@ func (r *AccountRepository) callGoTrue(ctx context.Context, path string, body ma
 
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, 128<<10))
 	if err != nil {
-		return account.Session{}, err
+		return account.Session{}, nil, err
 	}
 
 	if resp.StatusCode >= http.StatusBadRequest {
-		return account.Session{}, translateGoTrue(resp.StatusCode, raw)
+		return account.Session{}, raw, translateGoTrue(resp.StatusCode, raw)
 	}
 
 	// Logout membalas 204 tanpa body.
 	if len(raw) == 0 {
-		return account.Session{}, nil
+		return account.Session{}, raw, nil
 	}
 
 	var s gotrueSession
 	if err := json.Unmarshal(raw, &s); err != nil {
-		return account.Session{}, fmt.Errorf("account: respons Supabase tidak terbaca: %w", err)
+		return account.Session{}, raw, fmt.Errorf("account: respons Supabase tidak terbaca: %w", err)
 	}
 
 	return account.Session{
@@ -143,7 +181,7 @@ func (r *AccountRepository) callGoTrue(ctx context.Context, path string, body ma
 		TokenType:    s.TokenType,
 		UserID:       s.User.ID,
 		Email:        s.User.Email,
-	}, nil
+	}, raw, nil
 }
 
 // translateGoTrue memetakan kegagalan Supabase ke error domain.

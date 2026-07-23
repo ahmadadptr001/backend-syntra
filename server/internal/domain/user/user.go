@@ -63,6 +63,8 @@ type Repository interface {
 	Follow(ctx context.Context, targetID string) (FollowStatus, error)
 	Unfollow(ctx context.Context, targetID string) error
 	ListFollowing(ctx context.Context) ([]Profile, error)
+	ListFollowRequests(ctx context.Context) ([]Profile, error)
+	DecideFollowRequest(ctx context.Context, followerID string, approve bool) error
 }
 
 // Service memuat alur bisnis direktori pengguna.
@@ -141,6 +143,23 @@ func (s *Service) Unfollow(ctx context.Context, username string) (Profile, error
 // `accepted` — sebab list_stories menyaring berdasarkan itu.
 func (s *Service) ListFollowing(ctx context.Context) ([]Profile, error) {
 	return s.repo.ListFollowing(ctx)
+}
+
+// FollowRequests mengembalikan permintaan follow yang menunggu keputusan.
+//
+// Hanya relevan untuk akun privat. Tanpa endpoint ini, status `pending`
+// menggantung selamanya dan pemintanya tidak pernah bisa melihat story.
+func (s *Service) FollowRequests(ctx context.Context) ([]Profile, error) {
+	return s.repo.ListFollowRequests(ctx)
+}
+
+// DecideFollowRequest menyetujui atau menolak permintaan follow.
+func (s *Service) DecideFollowRequest(ctx context.Context, username string, approve bool) error {
+	profile, err := s.FindByUsername(ctx, username)
+	if err != nil {
+		return err
+	}
+	return s.repo.DecideFollowRequest(ctx, profile.ID, approve)
 }
 
 func normalize(username string) (string, error) {

@@ -19,6 +19,10 @@ type RoomService interface {
 	List(ctx context.Context) ([]room.Room, error)
 	Join(ctx context.Context, roomID, userID, identity string) (room.Join, error)
 	Leave(ctx context.Context, roomID string) error
+	End(ctx context.Context, roomID string) error
+	CancelSpeakRequest(ctx context.Context, roomID string) error
+	JoinRequests(ctx context.Context, roomID string) ([]room.SpeakRequest, error)
+	DecideJoinRequest(ctx context.Context, roomID, userID string, approve bool) error
 	Participants(ctx context.Context, roomID string) ([]room.Participant, error)
 	SpeakRequests(ctx context.Context, roomID string) ([]room.SpeakRequest, error)
 	SetRole(ctx context.Context, roomID, targetID string, role room.Role) error
@@ -139,6 +143,7 @@ func (h *Room) Create(w http.ResponseWriter, r *http.Request) {
 		roomDTO: toRoomDTO(created),
 		Join: joinDTO{
 			RoomID:     joined.RoomID,
+			Status:     string(joined.Status),
 			Role:       string(joined.Role),
 			CanPublish: joined.CanPublish,
 			SFURoomID:  joined.SFURoomID,
@@ -149,8 +154,14 @@ func (h *Room) Create(w http.ResponseWriter, r *http.Request) {
 }
 
 type joinDTO struct {
-	RoomID     string `json:"room_id"`
-	Role       string `json:"role"`
+	RoomID string `json:"room_id"`
+
+	// "joined" atau "pending". Pada "pending", permintaan masuk sedang
+	// menunggu keputusan host dan sfu_token sengaja tidak diterbitkan —
+	// kalau diterbitkan, ruang tunggu hanya jadi hiasan yang bisa dilewati.
+	Status string `json:"status"`
+
+	Role       string `json:"role,omitempty"`
 	CanPublish bool   `json:"can_publish"`
 
 	// Dua field inilah yang membuat suara benar-benar terdengar. Klien
@@ -180,14 +191,90 @@ func (h *Room) Join(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	httpx.OK(w, joinDTO{
+	dto := joinDTO{
 		RoomID:     joined.RoomID,
+		Status:     string(joined.Status),
 		Role:       string(joined.Role),
 		CanPublish: joined.CanPublish,
 		SFURoomID:  joined.SFURoomID,
 		SFUToken:   joined.SFUToken,
 		SFUURL:     joined.SFUURL,
-	})
+	}
+
+	// 202 memberi tahu klien bahwa permintaannya diterima tetapi belum selesai —
+	// tepatnya keadaan "menunggu izin masuk".
+	if joined.Status == room.JoinStatusPending {
+		httpx.JSON(w, http.StatusAccepted, httpx.Response{Data: dto})
+		return
+	}
+
+	httpx.OK(w, dto)
+}
+
+// End menangani POST /api/v1/rooms/{id}/end.
+//
+// Hanya host. Berbeda dari leave: host bisa menutup room tanpa harus keluar
+// lebih dulu, dan seluruh peserta langsung dikeluarkan.
+func (h *Room) End(w http.ResponseWriter, r *http.Request) {
+	if err := h.svc.End(r.Context(), r.PathValue("id")); err != nil {
+		writeRoomError(w, r, err)
+		return
+	}
+	httpx.NoContent(w)
+}
+
+// CancelSpeakRequest menangani DELETE /api/v1/rooms/{id}/raise-hand.
+//
+// Bendera juga turun sendiri saat peran naik jadi speaker; endpoint ini untuk
+// peminta yang berubah pikiran.
+func (h *Room) CancelSpeakRequest(w http.ResponseWriter, r *http.Request) {
+	if err := h.svc.CancelSpeakRequest(r.Context(), r.PathValue("id")); err != nil {
+		writeRoomError(w, r, err)
+		return
+	}
+	httpx.NoContent(w)
+}
+
+// JoinRequests menangani GET /api/v1/rooms/{id}/requests.
+func (h *Room) JoinRequests(w http.ResponseWriter, r *http.Request) {
+	reqs, err := h.svc.JoinRequests(r.Context(), r.PathValue("id"))
+	if err != nil {
+		writeRoomError(w, r, err)
+		return
+	}
+
+	items := make([]speakRequestDTO, 0, len(reqs))
+	for _, q := range reqs {
+		items = append(items, speakRequestDTO{
+			UserID:      q.UserID,
+			Username:    q.Username,
+			DisplayName: q.DisplayName,
+			AvatarURL:   h.media.PublicURL(q.AvatarKey),
+			RequestedAt: q.RequestedAt,
+		})
+	}
+	httpx.Page(w, items, pageMeta{Count: len(items)})
+}
+
+// ApproveJoin menangani POST /api/v1/rooms/{id}/requests/{user_id}/approve.
+//
+// Yang disetujui harus memanggil join lagi untuk mendapat token SFU — saat
+// keputusan dibuat, ia belum tentu masih menunggu di layar.
+func (h *Room) ApproveJoin(w http.ResponseWriter, r *http.Request) {
+	h.decideJoin(w, r, true)
+}
+
+// RejectJoin menangani POST /api/v1/rooms/{id}/requests/{user_id}/reject.
+func (h *Room) RejectJoin(w http.ResponseWriter, r *http.Request) {
+	h.decideJoin(w, r, false)
+}
+
+func (h *Room) decideJoin(w http.ResponseWriter, r *http.Request, approve bool) {
+	if err := h.svc.DecideJoinRequest(r.Context(), r.PathValue("id"), r.PathValue("user_id"), approve); err != nil {
+		writeRoomError(w, r, err)
+		return
+	}
+	httpx.NoContent(w)
 }
 
 // Leave menangani POST /api/v1/rooms/{id}/leave.
