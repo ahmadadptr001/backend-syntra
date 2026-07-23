@@ -7,6 +7,80 @@ pencarian, dan menu — semuanya dalam tema gelap `#121212` dengan font **Ralewa
 
 ---
 
+## 🆕 Gelombang fitur baru (2026-07-24, ronde 3): chat WA-style, panggilan, Shorts
+
+Tiga kelompok fitur besar baru mendarat di backend. **Semuanya butuh migrasi
+SQL dijalankan dulu** (lihat daftar di bawah); sampai itu, endpoint-nya membalas
+`404`. Kontrak lengkap tiap endpoint ada di [`api.md`](api.md) — di sini
+ringkasan supaya kalian tahu apa yang sekarang bisa disambung.
+
+### 1. Chat & grup ala WhatsApp — `api.md` §5b
+
+Dulu grup hanya bisa dibuat lalu diam. Sekarang lengkap:
+
+- **Info & atur grup**: `GET`/`PATCH /conversations/{id}` (judul/avatar,
+  khusus admin), `POST /conversations/{id}/leave` (keluar; pemilik keluar →
+  kepemilikan pindah otomatis).
+- **Anggota**: `GET`/`POST /conversations/{id}/members`, `DELETE`/`PATCH
+  .../members/{user_id}` (tambah/keluarkan/ubah peran). Admin-only; ubah peran
+  owner-only.
+- **Reaksi emoji**: `PUT /messages/{id}/reaction` (emoji kosong = hapus),
+  `GET /conversations/{id}/reactions?message_ids=a,b,c`.
+- **Bisukan**: `PUT /conversations/{id}/mute`.
+- **Lampiran media di pesan**: kirim `media_ids` (maks 10) di
+  `POST /conversations/{id}/messages`. Balasan & riwayat kini punya
+  `attachments` (daftar URL siap tampil).
+- **Pesan sistem**: pesan `type: "system"` `sender_id: null` — anggota
+  masuk/keluar dll. Tampilkan rata tengah, bukan gelembung.
+- **Realtime baru**: event `conversation.updated` di topik `conversation:<id>`
+  → muat ulang detail/anggota grup.
+
+### 2. Telepon & video call — `api.md` §5c
+
+Layar Calls kalian yang masih placeholder sekarang punya backend. Panggilan
+memakai **LiveKit yang sama** dengan voice room (sfu_token → sambung ke SFU;
+audio/video tak lewat backend).
+
+- `POST /calls` (`{conversation_id, kind: "audio"|"video"}`) — mulai/gabung.
+- `POST /calls/{id}/answer` · `/decline` · `/leave` (sertakan
+  `?conversation_id=<id>` agar lawan bicara dapat siaran).
+- `GET /conversations/{id}/call` — panggilan aktif untuk tombol "gabung".
+- **Realtime**: `call.incoming` (berdering!), `call.answered`, `call.ended`
+  di topik `conversation:<id>`.
+
+### 3. Reels / Shorts — `api.md` §8b
+
+Tab Shorts kalian sekarang bisa disambung ke data nyata. Feed kronologis
+(cursor `before_at`+`before_id`), video vertikal.
+
+- `GET /reels` (feed) · `POST /reels` (buat dari `media_id` video milik sendiri).
+- `GET /reels/{id}` · `GET /reels/me` · `GET /reels/saved` ·
+  `GET /users/{username}/reels`.
+- Interaksi: `PUT`/`DELETE /reels/{id}/like`, `.../save`,
+  `POST /reels/{id}/view` (aman dipanggil tiap tampil — di-dedup).
+- Komentar: `GET`/`POST /reels/{id}/comments`,
+  `DELETE /reels/{id}/comments/{comment_id}` (balasan 1 tingkat).
+
+### ⚠️ Batas media baru — tolong validasi di aplikasi SEBELUM unggah
+
+Supaya storage tidak meledak, konfirmasi media yang kelewat besar/panjang
+**ditolak**: gambar 10MB, **video 100MB & maks 3 menit**, audio 20MB, voice
+note 16MB. Periksa ukuran/durasi sebelum mengunggah agar tidak buang kuota
+hanya untuk ditolak (`413`/`400`) di langkah konfirmasi.
+
+### 🔴 Migrasi yang HARUS dijalankan pemilik backend (Supabase → SQL Editor)
+
+```
+server/migrations/20260724000014_chat_wa_features.sql
+server/migrations/20260724000015_calls.sql
+server/migrations/20260724000016_reels.sql
+```
+
+Jalankan berurutan. Sampai dijalankan, endpoint chat-grup/panggilan/reels
+membalas `404`. Setelah itu semuanya langsung hidup tanpa perubahan aplikasi.
+
+---
+
 ## ⚠️ SATU LANGKAH YANG MEMBLOKIR SEMUANYA (2026-07-24, ronde 2)
 
 Kalian menguji lagi dan menemukan hapus-pesan, approve-follow, reset-raise-hand,
