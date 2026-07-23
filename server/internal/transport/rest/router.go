@@ -30,12 +30,13 @@ type Deps struct {
 	WSPath    string
 	WSHandler http.Handler
 
-	Health *handler.Health
-	Chat   *handler.Chat
-	Story  *handler.Story
-	User   *handler.User
-	Media  *handler.Media
-	Room   *handler.Room
+	Health  *handler.Health
+	Account *handler.Account
+	Chat    *handler.Chat
+	Story   *handler.Story
+	User    *handler.User
+	Media   *handler.Media
+	Room    *handler.Room
 }
 
 // NewRouter membangun handler HTTP lengkap dengan middleware.
@@ -45,6 +46,13 @@ func NewRouter(d Deps) http.Handler {
 	// --- publik: tanpa autentikasi ---
 	mux.HandleFunc("GET /healthz", d.Health.Live)
 	mux.HandleFunc("GET /readyz", d.Health.Ready)
+
+	// Endpoint auth berada di luar middleware auth — justru inilah yang
+	// menerbitkan tokennya. Logout memeriksa header sendiri.
+	mux.HandleFunc("POST /api/v1/auth/register", d.Account.Register)
+	mux.HandleFunc("POST /api/v1/auth/login", d.Account.Login)
+	mux.HandleFunc("POST /api/v1/auth/refresh", d.Account.Refresh)
+	mux.HandleFunc("POST /api/v1/auth/logout", d.Account.Logout)
 
 	// --- REST terproteksi ---
 	protected := middleware.Auth(d.Verifier, middleware.AuthOptions{

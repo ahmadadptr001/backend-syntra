@@ -39,9 +39,9 @@ type AuthOptions struct {
 func Auth(verifier auth.Verifier, opts AuthOptions) Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			token := extractToken(r, opts)
+			token, reason := extractToken(r, opts)
 			if token == "" {
-				httpx.Fail(w, r, http.StatusUnauthorized, httpx.CodeUnauthorized, "token tidak disertakan")
+				httpx.Fail(w, r, http.StatusUnauthorized, httpx.CodeUnauthorized, reason)
 				return
 			}
 
@@ -62,23 +62,39 @@ func Auth(verifier auth.Verifier, opts AuthOptions) Middleware {
 	}
 }
 
-func extractToken(r *http.Request, opts AuthOptions) string {
+// extractToken mengambil token dan, kalau gagal, menjelaskan kenapa.
+//
+// Alasannya dipisahkan karena "tidak ada header" dan "header ada tapi salah
+// format" adalah dua masalah yang sangat berbeda di sisi klien — dan pesan
+// yang sama untuk keduanya pernah menyita waktu untuk didiagnosis. Pesan ini
+// aman ditampilkan: ia menjelaskan bentuk yang diharapkan, bukan membocorkan
+// apakah suatu token valid.
+func extractToken(r *http.Request, opts AuthOptions) (token, reason string) {
 	if header := r.Header.Get(headerAuthorization); header != "" {
 		if len(header) > len(bearerPrefix) && strings.EqualFold(header[:len(bearerPrefix)], bearerPrefix) {
-			return strings.TrimSpace(header[len(bearerPrefix):])
+			value := strings.TrimSpace(header[len(bearerPrefix):])
+			if value == "" {
+				return "", `header Authorization berisi "Bearer" tanpa token`
+			}
+			return value, ""
 		}
-		return ""
+
+		// Kasus paling sering: klien mengirim JWT mentah tanpa awalan.
+		return "", `format header Authorization salah, harus "Bearer <token>"`
 	}
 
 	if opts.AllowDebugHeader {
 		if user := r.Header.Get(headerDebugUser); user != "" {
-			return user
+			return user, ""
 		}
 	}
 
 	if opts.AllowQueryToken {
-		return strings.TrimSpace(r.URL.Query().Get(queryToken))
+		if value := strings.TrimSpace(r.URL.Query().Get(queryToken)); value != "" {
+			return value, ""
+		}
+		return "", `token tidak disertakan: kirim header "Authorization: Bearer <token>" atau query ?token=<token>`
 	}
 
-	return ""
+	return "", `token tidak disertakan: kirim header "Authorization: Bearer <token>"`
 }

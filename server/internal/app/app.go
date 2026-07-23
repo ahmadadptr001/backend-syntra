@@ -17,6 +17,7 @@ import (
 
 	"github.com/ahmadadptr001/backend-syntra/internal/auth"
 	"github.com/ahmadadptr001/backend-syntra/internal/config"
+	"github.com/ahmadadptr001/backend-syntra/internal/domain/account"
 	"github.com/ahmadadptr001/backend-syntra/internal/domain/chat"
 	"github.com/ahmadadptr001/backend-syntra/internal/domain/media"
 	"github.com/ahmadadptr001/backend-syntra/internal/domain/presence"
@@ -84,6 +85,7 @@ func New(ctx context.Context, cfg *config.Config, log *slog.Logger) (*App, error
 	mediaStorage := repo.NewMediaStorage(supa)
 	presenceStore := redisstore.NewPresence(rdb)
 
+	accountRepo := repo.NewAccountRepository(supa)
 	roomRepo := repo.NewRoomRepository(supa)
 	sfu := livekit.New(cfg.LiveKit.APIKey, cfg.LiveKit.APISecret, cfg.LiveKit.URL)
 	if !sfu.Configured() {
@@ -125,6 +127,9 @@ func New(ctx context.Context, cfg *config.Config, log *slog.Logger) (*App, error
 			"supabase": supa.Ping,
 			"redis":    func(ctx context.Context) error { return rdb.Ping(ctx).Err() },
 		}),
+		Account: handler.NewAccount(
+			account.NewService(accountRepo, accountRepo),
+		),
 		Chat:  handler.NewChat(chatService),
 		Story: handler.NewStory(storyService, mediaService),
 		User:  handler.NewUser(userService, mediaService),
