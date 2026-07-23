@@ -286,19 +286,30 @@ func (r *ChatRepository) InsertMessage(ctx context.Context, msg chat.Message) er
 		"p_body":         nullIfEmpty(msg.Body),
 		"p_reply_to":     nullIfEmpty(msg.ReplyToID),
 		"p_created_at":   msg.CreatedAt.UTC(),
-	}
-	// p_media hanya disertakan saat ada lampiran. Tanpa ini, pesan teks biasa
-	// memanggil send_message dengan 6 argumen — cocok dengan versi lama fungsi —
-	// sehingga pengiriman pesan tetap jalan walau migrasi lampiran belum
-	// dijalankan. Media adalah fitur baru yang memang butuh migrasi tersebut.
-	if len(msg.MediaIDs) > 0 {
-		args["p_media"] = msg.MediaIDs
+		// p_media SELALU disertakan (array kosong kalau tak ada lampiran).
+		//
+		// Sejak migrasi 14 ada dua send_message: versi 6-argumen (lama) dan
+		// 7-argumen (dengan p_media). Memanggil tanpa p_media membuat PostgREST
+		// harus memilih di antara dua overload yang sama-sama cocok — dan pada
+		// kasus itu panggilan "berhasil" (2xx) tapi pesan TIDAK tersimpan.
+		// Dengan selalu mengirim p_media, hanya versi 7-argumen yang cocok, jadi
+		// resolusinya deterministik dan pesan teks kembali tersimpan.
+		"p_media": mediaOrEmpty(msg.MediaIDs),
 	}
 
 	if err := r.client.RPC(ctx, "send_message", args, nil, actor); err != nil {
 		return translate(err)
 	}
 	return nil
+}
+
+// mediaOrEmpty memastikan p_media selalu berupa array (bukan nil) supaya
+// PostgREST memilih overload send_message 7-argumen tanpa ambiguitas.
+func mediaOrEmpty(ids []string) []string {
+	if ids == nil {
+		return []string{}
+	}
+	return ids
 }
 
 // MarkRead memanggil fungsi mark_conversation_read.
