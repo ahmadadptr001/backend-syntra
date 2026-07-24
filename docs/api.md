@@ -197,6 +197,9 @@ Seluruh baris di tabel ini **diverifikasi jalan** lewat `server/scripts/smoke.ps
 | `PATCH` | `/api/v1/conversations/{id}/members/{user_id}` | ✅ |
 | `GET` | `/api/v1/conversations/{id}/reactions` | ✅ |
 | `PUT` | `/api/v1/messages/{id}/reaction` | ✅ |
+| `GET` | `/api/v1/messages/starred` | ✅ |
+| `PUT` | `/api/v1/messages/{id}/star` | ✅ |
+| `DELETE` | `/api/v1/messages/{id}/star` | ✅ |
 | `POST` | `/api/v1/calls` | ✅ |
 | `POST` | `/api/v1/calls/{id}/answer` | ✅ |
 | `POST` | `/api/v1/calls/{id}/decline` | ✅ |
@@ -616,6 +619,36 @@ yang lama.
 
 Kirim `emoji` kosong (`""`) atau `null` untuk **menghapus** reaksi. Balasan
 `204`. Pemanggil harus anggota percakapan pesan tersebut.
+
+### `PUT /api/v1/messages/{id}/star` · `DELETE /api/v1/messages/{id}/star`
+
+Menandai / melepas bintang pada sebuah pesan. **Bintang bersifat pribadi** —
+tidak terlihat peserta lain (berbeda dari reaksi). Keduanya idempoten, balasan
+`204`. Menandai butuh pemanggil anggota percakapan pesan itu (`403` kalau bukan);
+pesan yang tidak ada / sudah dihapus `404`.
+
+### `GET /api/v1/messages/starred`
+
+Daftar pesan berbintang pemanggil **lintas percakapan**, terbaru dulu. Untuk
+layar "Starred messages" di menu titik-tiga. Cursor `?before=<rfc3339>` (dari
+`starred_at` item terakhir) + `?limit=`.
+
+```json
+{ "data": [{
+    "id": "019f9a01-...",
+    "conversation_id": "019f8e12-...",
+    "sender_id": "4e12...",
+    "type": "text",
+    "body": "jangan lupa meeting jam 3",
+    "created_at": "2026-07-24T09:00:00Z",
+    "attachments": [],
+    "starred_at": "2026-07-24T10:15:00Z"
+}], "meta": { "count": 1, "next_before": "2026-07-24T10:15:00Z" } }
+```
+
+Bentuk tiap item sama dengan pesan biasa (termasuk `attachments` siap tampil,
+`edited_at`) plus `starred_at`. Pesan yang kemudian dihapus atau di percakapan
+yang sudah kamu tinggalkan otomatis tidak muncul.
 
 ---
 

@@ -354,6 +354,40 @@ func (s *Service) EditMessage(ctx context.Context, messageID, userID, body strin
 	return nil
 }
 
+// StarMessage menandai pesan sebagai bintang bagi pemanggil. Idempoten.
+func (s *Service) StarMessage(ctx context.Context, messageID, userID string) error {
+	if messageID == "" || userID == "" {
+		return ErrInvalidInput
+	}
+	return s.repo.StarMessage(ctx, messageID, userID)
+}
+
+// UnstarMessage melepas bintang. Idempoten.
+func (s *Service) UnstarMessage(ctx context.Context, messageID, userID string) error {
+	if messageID == "" || userID == "" {
+		return ErrInvalidInput
+	}
+	return s.repo.UnstarMessage(ctx, messageID, userID)
+}
+
+// ListStarred mengembalikan pesan berbintang pemanggil lintas percakapan,
+// terbaru dulu.
+func (s *Service) ListStarred(ctx context.Context, userID string, before time.Time, limit int) ([]StarredMessage, error) {
+	if userID == "" {
+		return nil, ErrInvalidInput
+	}
+	switch {
+	case limit <= 0:
+		limit = defaultPageSize
+	case limit > maxPageSize:
+		limit = maxPageSize
+	}
+	if before.IsZero() {
+		before = time.Now().Add(time.Minute)
+	}
+	return s.repo.ListStarred(ctx, userID, before, limit)
+}
+
 // ClearConversation mengosongkan riwayat percakapan HANYA untuk pemanggil.
 //
 // Menghapus pesan orang lain dari layar mereka bukan wewenang siapa pun di

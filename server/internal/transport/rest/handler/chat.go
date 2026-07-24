@@ -22,6 +22,9 @@ type ChatService interface {
 	CreateGroup(ctx context.Context, userID, title string, memberIDs []string) (string, error)
 	DeleteMessage(ctx context.Context, messageID, userID string) error
 	EditMessage(ctx context.Context, messageID, userID, body string) error
+	StarMessage(ctx context.Context, messageID, userID string) error
+	UnstarMessage(ctx context.Context, messageID, userID string) error
+	ListStarred(ctx context.Context, userID string, before time.Time, limit int) ([]chat.StarredMessage, error)
 	ClearConversation(ctx context.Context, conversationID, userID string) error
 	DeleteConversation(ctx context.Context, conversationID, userID string) error
 
@@ -381,6 +384,80 @@ func (h *Chat) editMessage(w http.ResponseWriter, r *http.Request, messageID str
 		return
 	}
 	httpx.NoContent(w)
+}
+
+type starredMessageDTO struct {
+	messageDTO
+	StarredAt time.Time `json:"starred_at"`
+}
+
+// StarMessage menangani PUT /api/v1/messages/{id}/star. Idempoten.
+func (h *Chat) StarMessage(w http.ResponseWriter, r *http.Request) {
+	messageID := r.PathValue("id")
+	if messageID == "" {
+		httpx.Fail(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "id pesan tidak boleh kosong")
+		return
+	}
+	if err := h.svc.StarMessage(r.Context(), messageID, auth.UserID(r.Context())); err != nil {
+		writeDomainError(w, r, err)
+		return
+	}
+	httpx.NoContent(w)
+}
+
+// UnstarMessage menangani DELETE /api/v1/messages/{id}/star. Idempoten.
+func (h *Chat) UnstarMessage(w http.ResponseWriter, r *http.Request) {
+	messageID := r.PathValue("id")
+	if messageID == "" {
+		httpx.Fail(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "id pesan tidak boleh kosong")
+		return
+	}
+	if err := h.svc.UnstarMessage(r.Context(), messageID, auth.UserID(r.Context())); err != nil {
+		writeDomainError(w, r, err)
+		return
+	}
+	httpx.NoContent(w)
+}
+
+// ListStarred menangani GET /api/v1/messages/starred.
+//
+// Pesan berbintang pemanggil lintas percakapan, terbaru dulu, cursor `before`
+// (RFC3339, dari `starred_at` item terakhir).
+func (h *Chat) ListStarred(w http.ResponseWriter, r *http.Request) {
+	limit, err := strconv.Atoi(r.URL.Query().Get("limit"))
+	if err != nil {
+		limit = 0
+	}
+
+	var before time.Time
+	if raw := r.URL.Query().Get("before"); raw != "" {
+		before, err = time.Parse(time.RFC3339, raw)
+		if err != nil {
+			httpx.Fail(w, r, http.StatusBadRequest, httpx.CodeBadRequest,
+				"parameter before harus berformat RFC3339, contoh: 2026-07-23T10:00:00Z")
+			return
+		}
+	}
+
+	messages, err := h.svc.ListStarred(r.Context(), auth.UserID(r.Context()), before, limit)
+	if err != nil {
+		writeDomainError(w, r, err)
+		return
+	}
+
+	items := make([]starredMessageDTO, 0, len(messages))
+	for _, m := range messages {
+		items = append(items, starredMessageDTO{
+			messageDTO: toMessageDTO(m.Message, h.media),
+			StarredAt:  m.StarredAt,
+		})
+	}
+
+	meta := pageMeta{Count: len(items)}
+	if n := len(items); n > 0 {
+		meta.NextBefore = &items[n-1].StarredAt
+	}
+	httpx.Page(w, items, meta)
 }
 
 // ClearConversation menangani DELETE /api/v1/conversations/{id}/messages.

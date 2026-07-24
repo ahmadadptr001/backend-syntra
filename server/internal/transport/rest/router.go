@@ -110,6 +110,14 @@ func NewRouter(d Deps) http.Handler {
 		protected(http.HandlerFunc(d.Chat.DeleteMessage)))
 	mux.Handle("PATCH /api/v1/messages/{id}",
 		protected(http.HandlerFunc(d.Chat.EditMessage)))
+	// Berbintang: pola literal "starred" didaftarkan bersama pola "{id}";
+	// ServeMux memilih yang lebih spesifik, jadi urutan tak menentukan.
+	mux.Handle("GET /api/v1/messages/starred",
+		protected(http.HandlerFunc(d.Chat.ListStarred)))
+	mux.Handle("PUT /api/v1/messages/{id}/star",
+		protected(http.HandlerFunc(d.Chat.StarMessage)))
+	mux.Handle("DELETE /api/v1/messages/{id}/star",
+		protected(http.HandlerFunc(d.Chat.UnstarMessage)))
 	// Bentuk bersarang yang dipakai aplikasi — setara dengan yang di atas.
 	mux.Handle("DELETE /api/v1/conversations/{id}/messages/{message_id}",
 		protected(http.HandlerFunc(d.Chat.DeleteMessageNested)))

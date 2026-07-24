@@ -114,6 +114,13 @@ type Message struct {
 	MediaIDs []string
 }
 
+// StarredMessage adalah pesan yang ditandai bintang oleh pemanggil, plus kapan
+// ditandai. Bintang adalah penanda pribadi, tidak terlihat peserta lain.
+type StarredMessage struct {
+	Message
+	StarredAt time.Time
+}
+
 // ConversationDetail adalah info satu percakapan untuk layar info grup.
 type ConversationDetail struct {
 	ID          string
@@ -156,6 +163,9 @@ type Repository interface {
 	CreateGroup(ctx context.Context, userID, title string, memberIDs []string) (string, error)
 	DeleteMessage(ctx context.Context, messageID, userID string) error
 	EditMessage(ctx context.Context, messageID, userID, body string) (conversationID string, editedAt time.Time, err error)
+	StarMessage(ctx context.Context, messageID, userID string) error
+	UnstarMessage(ctx context.Context, messageID, userID string) error
+	ListStarred(ctx context.Context, userID string, before time.Time, limit int) ([]StarredMessage, error)
 	ClearConversation(ctx context.Context, conversationID, userID string) error
 	DeleteConversation(ctx context.Context, conversationID, userID string) error
 

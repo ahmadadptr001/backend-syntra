@@ -235,6 +235,71 @@ func (r *ChatRepository) EditMessage(ctx context.Context, messageID, userID, bod
 	return rows[0].ConversationID, rows[0].EditedAt, nil
 }
 
+// StarMessage memanggil fungsi star_message.
+func (r *ChatRepository) StarMessage(ctx context.Context, messageID, userID string) error {
+	actor, err := actorOption(ctx, userID)
+	if err != nil {
+		return err
+	}
+	if err := r.client.RPC(ctx, "star_message",
+		map[string]any{"p_message": messageID}, nil, actor); err != nil {
+		return translate(err)
+	}
+	return nil
+}
+
+// UnstarMessage memanggil fungsi unstar_message.
+func (r *ChatRepository) UnstarMessage(ctx context.Context, messageID, userID string) error {
+	actor, err := actorOption(ctx, userID)
+	if err != nil {
+		return err
+	}
+	if err := r.client.RPC(ctx, "unstar_message",
+		map[string]any{"p_message": messageID}, nil, actor); err != nil {
+		return translate(err)
+	}
+	return nil
+}
+
+type starredRow struct {
+	messageRow
+	StarredAt time.Time `json:"starred_at"`
+}
+
+// ListStarred memanggil fungsi list_starred_messages.
+func (r *ChatRepository) ListStarred(ctx context.Context, userID string, before time.Time, limit int) ([]chat.StarredMessage, error) {
+	actor, err := actorOption(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	args := map[string]any{"p_before": before.UTC(), "p_limit": limit}
+
+	var rows []starredRow
+	if err := r.client.RPC(ctx, "list_starred_messages", args, &rows, actor); err != nil {
+		return nil, translate(err)
+	}
+
+	out := make([]chat.StarredMessage, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, chat.StarredMessage{
+			Message: chat.Message{
+				ID:             row.ID,
+				ConversationID: row.ConversationID,
+				SenderID:       deref(row.SenderID),
+				Type:           chat.MessageType(row.Type),
+				Body:           row.Body,
+				ReplyToID:      deref(row.ReplyToID),
+				CreatedAt:      row.CreatedAt,
+				EditedAt:       row.EditedAt,
+				IsDeleted:      row.IsDeleted,
+				AttachmentKeys: splitCSV(deref(row.Attachments)),
+			},
+			StarredAt: row.StarredAt,
+		})
+	}
+	return out, nil
+}
+
 // ClearConversation memanggil fungsi clear_conversation.
 func (r *ChatRepository) ClearConversation(ctx context.Context, conversationID, userID string) error {
 	actor, err := actorOption(ctx, userID)
