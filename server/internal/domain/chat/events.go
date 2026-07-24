@@ -53,6 +53,9 @@ type MessageEvent struct {
 	Body           string      `json:"body,omitempty"`
 	ReplyToID      string      `json:"reply_to_id,omitempty"`
 	CreatedAt      time.Time   `json:"created_at"`
+	// Attachments adalah URL lampiran siap tampil, supaya foto/voice note muncul
+	// realtime tanpa perlu memuat ulang percakapan.
+	Attachments []string `json:"attachments,omitempty"`
 }
 
 // ReadEvent memberi tahu perangkat lain milik pengguna yang sama bahwa
@@ -64,7 +67,17 @@ type ReadEvent struct {
 	ReadAt         time.Time `json:"read_at"`
 }
 
-func newMessageEvent(m Message) MessageEvent {
+func (s *Service) newMessageEvent(m Message) MessageEvent {
+	// Resolve attachment storage keys to public URLs so clients render media
+	// immediately from the broadcast, not only after a history reload.
+	var attachments []string
+	if s.mediaURL != nil {
+		for _, key := range m.AttachmentKeys {
+			if url := s.mediaURL(key); url != "" {
+				attachments = append(attachments, url)
+			}
+		}
+	}
 	return MessageEvent{
 		ID:             m.ID,
 		ConversationID: m.ConversationID,
@@ -73,5 +86,6 @@ func newMessageEvent(m Message) MessageEvent {
 		Body:           m.Body,
 		ReplyToID:      m.ReplyToID,
 		CreatedAt:      m.CreatedAt,
+		Attachments:    attachments,
 	}
 }

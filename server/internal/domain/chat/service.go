@@ -26,14 +26,17 @@ const (
 // aturan seperti pengecekan keanggotaan cepat atau lambat akan berbeda
 // antara dua jalur, dan yang lebih longgar menjadi celah keamanan.
 type Service struct {
-	repo Repository
-	pub  Publisher
-	log  *slog.Logger
+	repo     Repository
+	pub      Publisher
+	log      *slog.Logger
+	mediaURL func(storageKey string) string
 }
 
-// NewService merangkai service dengan port yang dibutuhkannya.
-func NewService(repo Repository, pub Publisher, log *slog.Logger) *Service {
-	return &Service{repo: repo, pub: pub, log: log}
+// NewService merangkai service dengan port yang dibutuhkannya. mediaURL
+// menyusun URL publik dari storage key lampiran, supaya siaran message.new
+// membawa URL siap tampil (kalau nil, lampiran tidak ikut disiarkan).
+func NewService(repo Repository, pub Publisher, log *slog.Logger, mediaURL func(string) string) *Service {
+	return &Service{repo: repo, pub: pub, log: log, mediaURL: mediaURL}
 }
 
 // ListConversations mengembalikan daftar chat milik pengguna, terbaru dulu.
@@ -181,7 +184,7 @@ func (s *Service) SendMessage(ctx context.Context, in SendMessageInput) (Message
 	// dan sudah durabel; klien lain akan mendapatkannya saat sinkronisasi ulang.
 	// Mengembalikan error di sini justru membuat pengirim mengira pesannya gagal
 	// dan mengirim ulang — duplikat, bukan perbaikan.
-	if err := s.pub.Publish(ctx, topic.Conversation(msg.ConversationID), EventMessageNew, newMessageEvent(msg)); err != nil {
+	if err := s.pub.Publish(ctx, topic.Conversation(msg.ConversationID), EventMessageNew, s.newMessageEvent(msg)); err != nil {
 		s.log.Warn("chat: pesan tersimpan tapi gagal disiarkan",
 			"error", err,
 			"message_id", msg.ID,

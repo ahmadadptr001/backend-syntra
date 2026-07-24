@@ -104,10 +104,10 @@ func New(ctx context.Context, cfg *config.Config, log *slog.Logger) (*App, error
 			"petunjuk", "isi LIVEKIT_API_KEY, LIVEKIT_API_SECRET, dan LIVEKIT_URL di .env")
 	}
 
-	chatService := chat.NewService(chatRepo, ws.NewPublisher(hub), log)
+	mediaService := media.NewService(mediaRepo, mediaStorage, cfg.Supabase.StorageBucket)
+	chatService := chat.NewService(chatRepo, ws.NewPublisher(hub), log, mediaService.PublicURL)
 	storyService := story.NewService(storyRepo, ws.NewPublisher(hub))
 	userService := user.NewService(userRepo)
-	mediaService := media.NewService(mediaRepo, mediaStorage, cfg.Supabase.StorageBucket)
 	presenceService := presence.NewService(presenceStore, cfg.WS.PresenceTTL, presenceVisibility)
 	roomService := room.NewService(roomRepo, sfu, ws.NewPublisher(hub))
 	// sfu memenuhi TokenIssuer sekaligus WebhookVerifier — objek yang sama
