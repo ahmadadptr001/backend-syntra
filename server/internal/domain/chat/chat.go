@@ -85,6 +85,7 @@ type Conversation struct {
 	LastMessagePreview string
 	LastMessageType    MessageType
 	LastMessageSender  string
+	LastMessageID      string
 	LastMessageAt      time.Time
 
 	CreatedAt time.Time

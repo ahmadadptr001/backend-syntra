@@ -71,6 +71,7 @@ type conversationDTO struct {
 	LastMessagePrev string `json:"last_message_preview"`
 	LastMessageType string `json:"last_message_type,omitempty"`
 	LastMessageBy   string `json:"last_message_sender_id,omitempty"`
+	LastMessageID   string `json:"last_message_id,omitempty"`
 
 	LastMessageAt time.Time `json:"last_message_at"`
 	CreatedAt     time.Time `json:"created_at"`
@@ -120,6 +121,7 @@ func (h *Chat) ListConversations(w http.ResponseWriter, r *http.Request) {
 			LastMessagePrev:       c.LastMessagePreview,
 			LastMessageType:       string(c.LastMessageType),
 			LastMessageBy:         c.LastMessageSender,
+			LastMessageID:         c.LastMessageID,
 			LastMessageAt:         c.LastMessageAt,
 			CreatedAt:             c.CreatedAt,
 		})

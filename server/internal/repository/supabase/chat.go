@@ -69,6 +69,7 @@ type conversationRow struct {
 
 	// Pointer karena kolom ini NULL pada percakapan yang belum berisi pesan.
 	LastMessageSender *string `json:"last_message_sender"`
+	LastMessageID     *string `json:"last_message_id"`
 
 	LastMessageAt time.Time `json:"last_message_at"`
 	CreatedAt     time.Time `json:"created_at"`
@@ -105,6 +106,7 @@ func (r *ChatRepository) ListConversations(ctx context.Context, userID string, l
 			LastMessagePreview:    row.LastMessagePrev,
 			LastMessageType:       chat.MessageType(row.LastMessageType),
 			LastMessageSender:     deref(row.LastMessageSender),
+			LastMessageID:         deref(row.LastMessageID),
 			LastMessageAt:         row.LastMessageAt,
 			CreatedAt:             row.CreatedAt,
 		})
