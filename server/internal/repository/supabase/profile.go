@@ -45,20 +45,21 @@ var (
 )
 
 type myProfileRow struct {
-	ID             string  `json:"id"`
-	Username       string  `json:"username"`
-	Email          string  `json:"email"`
-	DisplayName    string  `json:"display_name"`
-	Bio            string  `json:"bio"`
-	AvatarKey      string  `json:"avatar_key"`
-	CoverKey       string  `json:"cover_key"`
-	FollowerCount  int     `json:"follower_count"`
-	FollowingCount int     `json:"following_count"`
-	IsPrivate      bool    `json:"is_private"`
-	DateOfBirth    *string `json:"date_of_birth"`
-	DMPrivacy      string  `json:"dm_privacy"`
-	StoryPrivacy   string  `json:"story_privacy"`
-	Locale         string  `json:"locale"`
+	ID              string  `json:"id"`
+	Username        string  `json:"username"`
+	Email           string  `json:"email"`
+	DisplayName     string  `json:"display_name"`
+	Bio             string  `json:"bio"`
+	AvatarKey       string  `json:"avatar_key"`
+	CoverKey        string  `json:"cover_key"`
+	FollowerCount   int     `json:"follower_count"`
+	FollowingCount  int     `json:"following_count"`
+	IsPrivate       bool    `json:"is_private"`
+	DateOfBirth     *string `json:"date_of_birth"`
+	DMPrivacy       string  `json:"dm_privacy"`
+	StoryPrivacy    string  `json:"story_privacy"`
+	PresenceVisible bool    `json:"presence_visible"`
+	Locale          string  `json:"locale"`
 }
 
 // GetMyProfile memanggil fungsi get_my_profile.
@@ -78,20 +79,21 @@ func (r *ProfileRepository) GetMyProfile(ctx context.Context) (account.MyProfile
 
 	row := rows[0]
 	return account.MyProfile{
-		ID:             row.ID,
-		Username:       row.Username,
-		Email:          row.Email,
-		DisplayName:    row.DisplayName,
-		Bio:            row.Bio,
-		AvatarKey:      row.AvatarKey,
-		CoverKey:       row.CoverKey,
-		FollowerCount:  row.FollowerCount,
-		FollowingCount: row.FollowingCount,
-		IsPrivate:      row.IsPrivate,
-		DateOfBirth:    deref(row.DateOfBirth),
-		DMPrivacy:      row.DMPrivacy,
-		StoryPrivacy:   row.StoryPrivacy,
-		Locale:         row.Locale,
+		ID:              row.ID,
+		Username:        row.Username,
+		Email:           row.Email,
+		DisplayName:     row.DisplayName,
+		Bio:             row.Bio,
+		AvatarKey:       row.AvatarKey,
+		CoverKey:        row.CoverKey,
+		FollowerCount:   row.FollowerCount,
+		FollowingCount:  row.FollowingCount,
+		IsPrivate:       row.IsPrivate,
+		DateOfBirth:     deref(row.DateOfBirth),
+		DMPrivacy:       row.DMPrivacy,
+		StoryPrivacy:    row.StoryPrivacy,
+		PresenceVisible: row.PresenceVisible,
+		Locale:          row.Locale,
 	}, nil
 }
 
@@ -123,6 +125,11 @@ func (r *ProfileRepository) UpdateMyProfile(ctx context.Context, in account.Upda
 	}
 	if in.CoverMediaID != nil {
 		args["p_cover_media"] = *in.CoverMediaID
+	}
+	// p_presence_visible juga hanya disertakan saat diisi — sama alasannya:
+	// mengirimnya selalu akan menuntut versi fungsi dari migrasi 26.
+	if in.PresenceVisible != nil {
+		args["p_presence_visible"] = *in.PresenceVisible
 	}
 
 	if err := r.client.RPC(ctx, "update_my_profile", args, nil, actor); err != nil {

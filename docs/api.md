@@ -928,6 +928,7 @@ tanggal lahir, preferensi privasi.
     "date_of_birth": "1998-05-12",
     "dm_privacy": "everyone",
     "story_privacy": "followers",
+    "presence_visible": true,
     "locale": "id"
 } }
 ```
@@ -954,9 +955,15 @@ diubah. Balasannya profil terbaru (bentuk sama dengan `GET`).
 | `is_private` | akun privat |
 | `dm_privacy` | `everyone` \| `following` \| `nobody` |
 | `story_privacy` | `public` \| `followers` \| `close_friends` |
+| `presence_visible` | `true` \| `false` — tampilkan status online ke lawan bicara |
 
 Ganti foto profil/sampul: unggah lewat alur media §8 → ambil `media_id` →
 `PATCH` dengan `avatar_media_id` / `cover_media_id`.
+
+> **`presence_visible: false`** menyembunyikan status online sepenuhnya: pemilik
+> tak pernah tampak online bagi lawan bicara dan "last seen" tak terekam.
+> Berlaku sejak koneksi WebSocket berikutnya (mis. app dibuka lagi), bukan
+> seketika di sesi yang sedang berjalan.
 
 > **Email & kata sandi** tidak diubah di sini — keduanya milik Supabase Auth;
 > aplikasi memakai Supabase SDK (`updateUser`) langsung untuk itu.

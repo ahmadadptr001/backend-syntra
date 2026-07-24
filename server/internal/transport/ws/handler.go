@@ -59,12 +59,25 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	client := newClient(conn, principal, h.hub, h.router, h.opts, h.log)
+
+	// Pengguna yang mematikan privasi presence tidak dicatat online dan tidak
+	// disiarkan — jadi ia tak pernah tampak online bagi lawan bicara. Diperiksa
+	// sekali di sini; berlaku sejak koneksi berikutnya setelah setelan diubah.
+	if visible, err := h.presence.Visible(r.Context(), principal.UserID); err != nil {
+		h.log.Warn("ws: gagal memeriksa visibilitas presence, dianggap terlihat",
+			"error", err, "user_id", principal.UserID)
+	} else {
+		client.TrackPresence = visible
+	}
+
 	h.hub.Register(client)
 
-	if err := h.presence.Online(r.Context(), principal.UserID); err != nil {
-		// Presence adalah hiasan, bukan syarat. Gagal mencatatnya tidak boleh
-		// menghalangi pengguna memakai chat.
-		h.log.Warn("ws: gagal menandai online", "error", err, "user_id", principal.UserID)
+	if client.TrackPresence {
+		if err := h.presence.Online(r.Context(), principal.UserID); err != nil {
+			// Presence adalah hiasan, bukan syarat. Gagal mencatatnya tidak boleh
+			// menghalangi pengguna memakai chat.
+			h.log.Warn("ws: gagal menandai online", "error", err, "user_id", principal.UserID)
+		}
 	}
 
 	go client.writePump()
@@ -82,10 +95,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// nilai di dalamnya — termasuk JWT pengguna — tanpa ikut dibatalkan.
 	ctx := context.WithoutCancel(r.Context())
 
-	if err := h.presence.Offline(ctx, principal.UserID); err != nil {
-		h.log.Warn("ws: gagal menandai offline", "error", err, "user_id", principal.UserID)
+	if client.TrackPresence {
+		if err := h.presence.Offline(ctx, principal.UserID); err != nil {
+			h.log.Warn("ws: gagal menandai offline", "error", err, "user_id", principal.UserID)
+		}
+		BroadcastPresence(ctx, h.hub, principal.UserID, false, client.releasedTopics)
 	}
-	BroadcastPresence(ctx, h.hub, principal.UserID, false, client.releasedTopics)
 }
 
 // sendReady memberi tahu klien bahwa koneksi siap, sekaligus mengirim

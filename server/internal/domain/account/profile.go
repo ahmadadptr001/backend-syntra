@@ -41,7 +41,12 @@ type MyProfile struct {
 	DateOfBirth  string
 	DMPrivacy    string
 	StoryPrivacy string
-	Locale       string
+
+	// PresenceVisible menandai apakah status online pemilik terlihat lawan
+	// bicara. Bawaannya true; false menyembunyikannya sepenuhnya.
+	PresenceVisible bool
+
+	Locale string
 }
 
 // BlockedUser adalah satu orang yang diblokir.
@@ -54,14 +59,15 @@ type BlockedUser struct {
 
 // UpdateProfileInput memuat perubahan profil. Field nil berarti "biarkan".
 type UpdateProfileInput struct {
-	DisplayName   *string
-	Bio           *string
-	AvatarMediaID *string
-	CoverMediaID  *string
-	Username      *string
-	IsPrivate     *bool
-	DMPrivacy     *string
-	StoryPrivacy  *string
+	DisplayName     *string
+	Bio             *string
+	AvatarMediaID   *string
+	CoverMediaID    *string
+	Username        *string
+	IsPrivate       *bool
+	DMPrivacy       *string
+	StoryPrivacy    *string
+	PresenceVisible *bool
 }
 
 // ProfileStore adalah port penyimpanan profil, blokir, perangkat, dan laporan.

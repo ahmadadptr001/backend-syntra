@@ -38,21 +38,46 @@ type Store interface {
 	Query(ctx context.Context, userIDs []string) (map[string]Status, error)
 }
 
+// Visibility menjawab apakah seorang pengguna mengizinkan status online-nya
+// terlihat. Diimplementasikan oleh repository yang membaca user_settings.
+//
+// Opsional: kalau nil, semua orang dianggap terlihat (fitur privasi mati tanpa
+// mengganggu presence biasa).
+type Visibility interface {
+	IsVisible(ctx context.Context, userID string) (bool, error)
+}
+
 // Service memuat alur bisnis presence.
 type Service struct {
-	store Store
-	ttl   time.Duration
+	store      Store
+	visibility Visibility
+	ttl        time.Duration
 }
 
 // NewService merangkai service.
 //
 // ttl harus lebih besar dari interval ping WebSocket. Kalau lebih kecil,
 // pengguna yang koneksinya sehat akan berkedip offline di antara dua ping.
-func NewService(store Store, ttl time.Duration) *Service {
+// visibility boleh nil.
+func NewService(store Store, ttl time.Duration, visibility Visibility) *Service {
 	if ttl <= 0 {
 		ttl = time.Minute
 	}
-	return &Service{store: store, ttl: ttl}
+	return &Service{store: store, visibility: visibility, ttl: ttl}
+}
+
+// Visible menjawab apakah status online pengguna boleh terlihat lawan bicara.
+//
+// Dipakai lapisan WebSocket saat koneksi terbentuk: kalau false, backend tidak
+// mencatat pengguna online dan tidak menyiarkan perubahan statusnya. Gagal
+// memeriksa dianggap terlihat — privasi tidak boleh diam-diam menyembunyikan
+// orang gara-gara satu query gagal, dan sebaliknya membuka presence saat ragu
+// lebih sesuai dengan perilaku bawaan (terlihat).
+func (s *Service) Visible(ctx context.Context, userID string) (bool, error) {
+	if s.visibility == nil || userID == "" {
+		return true, nil
+	}
+	return s.visibility.IsVisible(ctx, userID)
 }
 
 // Online menandai pengguna sedang terhubung dan menyegarkan TTL-nya.

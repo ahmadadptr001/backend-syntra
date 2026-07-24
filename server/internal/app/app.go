@@ -89,6 +89,7 @@ func New(ctx context.Context, cfg *config.Config, log *slog.Logger) (*App, error
 	mediaRepo := repo.NewMediaRepository(supa)
 	mediaStorage := repo.NewMediaStorage(supa)
 	presenceStore := redisstore.NewPresence(rdb)
+	presenceVisibility := repo.NewPresenceVisibilityRepository(supa)
 
 	accountRepo := repo.NewAccountRepository(supa)
 	notifRepo := repo.NewNotificationRepository(supa)
@@ -106,7 +107,7 @@ func New(ctx context.Context, cfg *config.Config, log *slog.Logger) (*App, error
 	storyService := story.NewService(storyRepo)
 	userService := user.NewService(userRepo)
 	mediaService := media.NewService(mediaRepo, mediaStorage, cfg.Supabase.StorageBucket)
-	presenceService := presence.NewService(presenceStore, cfg.WS.PresenceTTL)
+	presenceService := presence.NewService(presenceStore, cfg.WS.PresenceTTL, presenceVisibility)
 	roomService := room.NewService(roomRepo, sfu, ws.NewPublisher(hub))
 	// sfu memenuhi TokenIssuer sekaligus WebhookVerifier — objek yang sama
 	// menerbitkan token dan memverifikasi webhook LiveKit.

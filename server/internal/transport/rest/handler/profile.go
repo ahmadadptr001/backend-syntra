@@ -46,11 +46,12 @@ type myProfileDTO struct {
 	FollowerCount  int `json:"follower_count"`
 	FollowingCount int `json:"following_count"`
 
-	IsPrivate    bool   `json:"is_private"`
-	DateOfBirth  string `json:"date_of_birth,omitempty"`
-	DMPrivacy    string `json:"dm_privacy"`
-	StoryPrivacy string `json:"story_privacy"`
-	Locale       string `json:"locale"`
+	IsPrivate       bool   `json:"is_private"`
+	DateOfBirth     string `json:"date_of_birth,omitempty"`
+	DMPrivacy       string `json:"dm_privacy"`
+	StoryPrivacy    string `json:"story_privacy"`
+	PresenceVisible bool   `json:"presence_visible"`
+	Locale          string `json:"locale"`
 }
 
 // GetMe menangani GET /api/v1/users/me.
@@ -65,32 +66,34 @@ func (h *Profile) GetMe(w http.ResponseWriter, r *http.Request) {
 	}
 
 	httpx.OK(w, myProfileDTO{
-		ID:             p.ID,
-		Username:       p.Username,
-		Email:          p.Email,
-		DisplayName:    p.DisplayName,
-		Bio:            p.Bio,
-		AvatarURL:      h.media.PublicURL(p.AvatarKey),
-		CoverURL:       h.media.PublicURL(p.CoverKey),
-		FollowerCount:  p.FollowerCount,
-		FollowingCount: p.FollowingCount,
-		IsPrivate:      p.IsPrivate,
-		DateOfBirth:    p.DateOfBirth,
-		DMPrivacy:      p.DMPrivacy,
-		StoryPrivacy:   p.StoryPrivacy,
-		Locale:         p.Locale,
+		ID:              p.ID,
+		Username:        p.Username,
+		Email:           p.Email,
+		DisplayName:     p.DisplayName,
+		Bio:             p.Bio,
+		AvatarURL:       h.media.PublicURL(p.AvatarKey),
+		CoverURL:        h.media.PublicURL(p.CoverKey),
+		FollowerCount:   p.FollowerCount,
+		FollowingCount:  p.FollowingCount,
+		IsPrivate:       p.IsPrivate,
+		DateOfBirth:     p.DateOfBirth,
+		DMPrivacy:       p.DMPrivacy,
+		StoryPrivacy:    p.StoryPrivacy,
+		PresenceVisible: p.PresenceVisible,
+		Locale:          p.Locale,
 	})
 }
 
 type updateProfileRequest struct {
-	DisplayName   *string `json:"display_name,omitempty"`
-	Bio           *string `json:"bio,omitempty"`
-	AvatarMediaID *string `json:"avatar_media_id,omitempty"`
-	CoverMediaID  *string `json:"cover_media_id,omitempty"`
-	Username      *string `json:"username,omitempty"`
-	IsPrivate     *bool   `json:"is_private,omitempty"`
-	DMPrivacy     *string `json:"dm_privacy,omitempty"`
-	StoryPrivacy  *string `json:"story_privacy,omitempty"`
+	DisplayName     *string `json:"display_name,omitempty"`
+	Bio             *string `json:"bio,omitempty"`
+	AvatarMediaID   *string `json:"avatar_media_id,omitempty"`
+	CoverMediaID    *string `json:"cover_media_id,omitempty"`
+	Username        *string `json:"username,omitempty"`
+	IsPrivate       *bool   `json:"is_private,omitempty"`
+	DMPrivacy       *string `json:"dm_privacy,omitempty"`
+	StoryPrivacy    *string `json:"story_privacy,omitempty"`
+	PresenceVisible *bool   `json:"presence_visible,omitempty"`
 }
 
 // UpdateMe menangani PATCH /api/v1/users/me.
@@ -105,14 +108,15 @@ func (h *Profile) UpdateMe(w http.ResponseWriter, r *http.Request) {
 	}
 
 	err := h.svc.Update(r.Context(), account.UpdateProfileInput{
-		DisplayName:   req.DisplayName,
-		Bio:           req.Bio,
-		AvatarMediaID: req.AvatarMediaID,
-		CoverMediaID:  req.CoverMediaID,
-		Username:      req.Username,
-		IsPrivate:     req.IsPrivate,
-		DMPrivacy:     req.DMPrivacy,
-		StoryPrivacy:  req.StoryPrivacy,
+		DisplayName:     req.DisplayName,
+		Bio:             req.Bio,
+		AvatarMediaID:   req.AvatarMediaID,
+		CoverMediaID:    req.CoverMediaID,
+		Username:        req.Username,
+		IsPrivate:       req.IsPrivate,
+		DMPrivacy:       req.DMPrivacy,
+		StoryPrivacy:    req.StoryPrivacy,
+		PresenceVisible: req.PresenceVisible,
 	})
 	if err != nil {
 		writeProfileError(w, r, err)

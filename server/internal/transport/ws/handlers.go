@@ -37,6 +37,7 @@ type PresenceService interface {
 	Online(ctx context.Context, userID string) error
 	Offline(ctx context.Context, userID string) error
 	Query(ctx context.Context, userIDs []string) (map[string]presence.Status, error)
+	Visible(ctx context.Context, userID string) (bool, error)
 }
 
 const maxTopicsPerFrame = 50
@@ -250,8 +251,11 @@ func handleSubscribe(members MembershipChecker) HandlerFunc {
 		// Begitu klien menyimak sebuah percakapan, lawan bicaranya perlu tahu
 		// ia sedang online. Disiarkan di sini, bukan saat koneksi terbentuk,
 		// karena saat itu belum ada topik yang dilanggan sehingga belum ada
-		// siapa pun yang bisa dituju.
-		BroadcastPresence(ctx, c.hub, c.UserID, true, granted)
+		// siapa pun yang bisa dituju. Dilewati bila pengguna menyembunyikan
+		// presence-nya.
+		if c.TrackPresence {
+			BroadcastPresence(ctx, c.hub, c.UserID, true, granted)
+		}
 
 		ack, err := protocol.NewAck(env.Ref, topicsPayload{Topics: granted})
 		if err != nil {

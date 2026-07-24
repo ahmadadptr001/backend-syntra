@@ -55,22 +55,28 @@ type Client struct {
 	// diikuti. Handler memakainya untuk menyiarkan presence offline ke
 	// orang-orang yang memang sedang menyimak topik itu.
 	releasedTopics []string
+
+	// TrackPresence menandai apakah status online klien ini boleh dicatat dan
+	// disiarkan. Bawaannya true; disetel false untuk pengguna yang mematikan
+	// privasi presence, sehingga ia tak pernah tampak online bagi lawan bicara.
+	TrackPresence bool
 }
 
 func newClient(conn *websocket.Conn, p auth.Principal, hub *Hub, router *Router, opts Options, log *slog.Logger) *Client {
 	clientID := id.New()
 
 	return &Client{
-		ID:       clientID,
-		UserID:   p.UserID,
-		DeviceID: p.DeviceID,
-		conn:     conn,
-		send:     make(chan []byte, opts.SendBuffer),
-		done:     make(chan struct{}),
-		hub:      hub,
-		router:   router,
-		opts:     opts,
-		log:      log.With("client_id", clientID, "user_id", p.UserID),
+		ID:            clientID,
+		UserID:        p.UserID,
+		DeviceID:      p.DeviceID,
+		conn:          conn,
+		send:          make(chan []byte, opts.SendBuffer),
+		done:          make(chan struct{}),
+		hub:           hub,
+		router:        router,
+		opts:          opts,
+		log:           log.With("client_id", clientID, "user_id", p.UserID),
+		TrackPresence: true, // dimatikan oleh handler kalau pengguna menyembunyikan presence
 	}
 }
 
