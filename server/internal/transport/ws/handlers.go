@@ -328,6 +328,13 @@ func authorizeTopic(ctx context.Context, c *Client, name string, members Members
 		// yang sudah diterima.
 		return errTopicDenied
 
+	case topic.KindRoomsFeed, topic.KindReelsFeed:
+		// Feed global: setiap pengguna terautentikasi boleh menyimak agar tahu
+		// ada room/reel baru saat tab-nya terbuka. Aman karena yang lewat hanya
+		// penanda ringkas, dan hanya konten publik yang diumumkan ke sini —
+		// room followers/invite_only dan reel followers/private tidak disiarkan.
+		return nil
+
 	default:
 		return errTopicUnknown
 	}

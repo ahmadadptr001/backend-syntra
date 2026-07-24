@@ -113,7 +113,7 @@ func New(ctx context.Context, cfg *config.Config, log *slog.Logger) (*App, error
 	// sfu memenuhi TokenIssuer sekaligus WebhookVerifier — objek yang sama
 	// menerbitkan token dan memverifikasi webhook LiveKit.
 	callService := call.NewService(callRepo, sfu, sfu, ws.NewPublisher(hub))
-	reelService := reel.NewService(reelRepo)
+	reelService := reel.NewService(reelRepo, ws.NewPublisher(hub))
 	notifService := notification.NewService(notifRepo, ws.NewPublisher(hub))
 	profileService := account.NewProfileService(profileRepo, profileRepo, ws.NewPublisher(hub), mediaService.PublicURL)
 

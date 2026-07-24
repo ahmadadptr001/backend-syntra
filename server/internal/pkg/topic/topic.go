@@ -18,7 +18,16 @@ const (
 	KindConversation Kind = "conversation"
 	KindRoom         Kind = "room"
 	KindReel         Kind = "reel"
+
+	// Feed global (singleton): tidak terikat satu entitas, melainkan kanal umum
+	// yang dilanggan semua pengguna terautentikasi saat tab terkait terbuka.
+	KindRoomsFeed Kind = "rooms"
+	KindReelsFeed Kind = "reels"
 )
+
+// feedID adalah id tetap kanal feed global — hanya ada satu per jenis, jadi
+// nilainya sekadar penggenap format "kind:id".
+const feedID = "all"
 
 const separator = ":"
 
@@ -37,6 +46,14 @@ func Room(roomID string) string { return string(KindRoom) + separator + roomID }
 // Reel adalah kanal satu reel, untuk counter like/komentar secara langsung.
 func Reel(reelID string) string { return string(KindReel) + separator + reelID }
 
+// RoomsFeed adalah kanal feed voice room global: dipakai untuk mengumumkan room
+// baru (room.created) ke siapa pun yang sedang membuka tab Rooms.
+func RoomsFeed() string { return string(KindRoomsFeed) + separator + feedID }
+
+// ReelsFeed adalah kanal feed reels/shorts global: mengumumkan reel baru/terhapus
+// (reel.new / reel.deleted) ke siapa pun yang sedang membuka tab Shorts.
+func ReelsFeed() string { return string(KindReelsFeed) + separator + feedID }
+
 // Parse memecah topik menjadi jenis dan id.
 //
 // Dibutuhkan lapisan otorisasi: sebelum sebuah klien boleh berlangganan,
@@ -48,7 +65,7 @@ func Parse(name string) (Kind, string, bool) {
 	}
 
 	switch Kind(kind) {
-	case KindUser, KindConversation, KindRoom, KindReel:
+	case KindUser, KindConversation, KindRoom, KindReel, KindRoomsFeed, KindReelsFeed:
 		return Kind(kind), id, true
 	default:
 		return "", "", false

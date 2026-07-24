@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/ahmadadptr001/backend-syntra/internal/pkg/id"
+	"github.com/ahmadadptr001/backend-syntra/internal/pkg/topic"
 )
 
 var (
@@ -135,12 +136,25 @@ type Repository interface {
 }
 
 // Service memuat alur bisnis reel.
+// Publisher adalah port siaran realtime. Domain hanya menyatakan "kabarkan
+// kejadian ini ke topik itu"; transportnya (WebSocket) urusan lapisan luar.
+type Publisher interface {
+	Publish(ctx context.Context, topic, eventType string, payload any) error
+}
+
+// Event yang disiarkan ke feed global reels:all.
+const (
+	EventReelNew     = "reel.new"
+	EventReelDeleted = "reel.deleted"
+)
+
 type Service struct {
 	repo Repository
+	pub  Publisher
 }
 
 // NewService merangkai service.
-func NewService(repo Repository) *Service { return &Service{repo: repo} }
+func NewService(repo Repository, pub Publisher) *Service { return &Service{repo: repo, pub: pub} }
 
 // Create menyimpan reel baru dari media yang sudah diunggah & dikonfirmasi.
 //
@@ -172,6 +186,16 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (Reel, error) {
 	}
 	if err := s.repo.Create(ctx, r); err != nil {
 		return Reel{}, err
+	}
+
+	// Umumkan ke feed global HANYA reel publik: reel followers/private tak boleh
+	// bocor ke feed umum. App yang membuka tab Shorts memakainya sebagai pemicu
+	// menyisipkan reel baru di puncak feed.
+	if r.Visibility == VisibilityPublic && s.pub != nil {
+		_ = s.pub.Publish(ctx, topic.ReelsFeed(), EventReelNew, map[string]any{
+			"reel_id":   r.ID,
+			"author_id": r.AuthorID,
+		})
 	}
 	return r, nil
 }
@@ -221,7 +245,19 @@ func (s *Service) Delete(ctx context.Context, reelID, userID string) error {
 	if reelID == "" || userID == "" {
 		return ErrInvalidInput
 	}
-	return s.repo.Delete(ctx, reelID, userID)
+	if err := s.repo.Delete(ctx, reelID, userID); err != nil {
+		return err
+	}
+
+	// Siarkan penghapusan ke feed global supaya reel hilang dari layar orang lain
+	// tanpa refresh. Kalau reel-nya tak publik, event ini menunjuk id yang tak
+	// ada di feed mereka — no-op yang tidak berbahaya.
+	if s.pub != nil {
+		_ = s.pub.Publish(ctx, topic.ReelsFeed(), EventReelDeleted, map[string]any{
+			"reel_id": reelID,
+		})
+	}
+	return nil
 }
 
 // Like menyukai reel (idempoten).

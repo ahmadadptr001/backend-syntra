@@ -1380,6 +1380,10 @@ Membuat reel dari media (video/gambar) milik sendiri yang sudah **`ready`**.
 `public`). Media orang lain / salah jenis / belum selesai diproses → `403`.
 Balasan `201` berisi objek reel.
 
+Kalau `visibility: "public"`, event **`reel.new`** disiarkan ke feed global
+`reels:all` (`{reel_id, author_id}`). Reel `followers`/`private` **tidak**
+diumumkan ke feed umum.
+
 ### `GET /api/v1/reels/me`
 
 Reel milik pemanggil sendiri, terbaru dulu (paginasi sama).
@@ -1400,7 +1404,8 @@ Satu reel (deep-link/detail). `404` kalau tidak ada atau tidak boleh dilihat.
 ### `DELETE /api/v1/reels/{id}`
 
 Menghapus reel milik sendiri (soft delete). Bukan milik pemanggil → `403`.
-Balasan `204`.
+Balasan `204`. Event **`reel.deleted`** (`{reel_id}`) disiarkan ke `reels:all`
+supaya reel hilang dari feed orang lain tanpa refresh.
 
 ### `PUT` / `DELETE /api/v1/reels/{id}/like`
 
@@ -1531,8 +1536,12 @@ diganti dengan yang otoritatif dari server begitu `ack` tiba.
 | `notification.new` | notifikasi baru untuk kamu (topik `user:<id>`) |
 | `user.updated` | profilmu berubah di perangkat lain (`user:<id>`) — `{user_id,display_name,avatar_url}`, sinkron nama & foto |
 | `story.new` | ada story baru dari orang yang kamu ikuti/ajak chat (`user:<id>`) — `{story_id,author_id,created_at}`, refresh story row |
+| `room.created` | room **publik** baru dibuat (feed `rooms:all`) — `{room_id,title,host_id,host_name,participant_count,visibility}`, sisipkan ke Voice Hub |
+| `reel.new` | reel **publik** baru (feed `reels:all`) — `{reel_id,author_id}`, sisipkan di puncak feed Shorts (ambil detail via `GET /reels/{id}`) |
+| `reel.deleted` | sebuah reel dihapus (feed `reels:all`) — `{reel_id}`, buang dari feed bila ada |
 
-Empat event `room.*` di atas disiarkan ke topik `room:<id>`. Bentuk payload dan
+Empat event `room.*` (ended/participants/speak_request/role_changed) disiarkan
+ke topik `room:<id>`. Bentuk payload dan
 alur lengkapnya ada di [`voice-rooms.md`](voice-rooms.md).
 
 Satu yang tidak boleh dilewat: **`room.role_changed` membawa `needs_rejoin`.**
@@ -1553,6 +1562,8 @@ Format: `<jenis>:<uuid>`
 | `conversation:<id>` | anggota percakapan | aktif — diperiksa keanggotaannya |
 | `room:<id>` | peserta aktif voice room | aktif — membawa chat efemeral |
 | `reel:<id>` | — | **ditolak**, fase berikutnya |
+| `rooms:all` | semua pengguna terautentikasi | aktif — feed global; langgan saat tab Rooms terbuka untuk `room.created` |
+| `reels:all` | semua pengguna terautentikasi | aktif — feed global; langgan saat tab Shorts terbuka untuk `reel.new`/`reel.deleted` |
 
 Otorisasi dilakukan **per topik**, bukan per koneksi. Tanpa itu, siapa pun yang
 punya token valid bisa `subscribe` ke `conversation:<id-orang-lain>` dan

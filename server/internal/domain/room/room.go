@@ -27,6 +27,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/ahmadadptr001/backend-syntra/internal/pkg/id"
+	"github.com/ahmadadptr001/backend-syntra/internal/pkg/topic"
 )
 
 var (
@@ -190,6 +191,10 @@ const (
 	EventJoinDecided      = "room.join_decided"
 )
 
+// EventRoomCreated disiarkan ke feed global rooms:all saat room PUBLIK dibuat,
+// supaya Voice Hub orang lain menampilkannya tanpa polling.
+const EventRoomCreated = "room.created"
+
 // TokenIssuer menerbitkan kredensial masuk ke media server.
 //
 // Interface, bukan tipe konkret, supaya SFU-nya bisa ditukar tanpa menyentuh
@@ -291,6 +296,20 @@ func (s *Service) CreateAndJoin(ctx context.Context, in CreateInput, identity st
 	joined, err := s.Join(ctx, created.ID, in.HostID, identity)
 	if err != nil {
 		return created, Join{}, err
+	}
+
+	// Umumkan ke feed global HANYA kalau publik: room followers/invite_only tak
+	// boleh bocor ke orang yang tak berhak masuk. Best effort — kegagalan siaran
+	// tidak menggagalkan pembuatan room.
+	if created.Visibility == VisibilityPublic && s.notifier != nil {
+		_ = s.notifier.Publish(ctx, topic.RoomsFeed(), EventRoomCreated, map[string]any{
+			"room_id":           created.ID,
+			"title":             created.Title,
+			"host_id":           created.HostID,
+			"host_name":         created.HostName,
+			"participant_count": 1,
+			"visibility":        string(created.Visibility),
+		})
 	}
 	return created, joined, nil
 }

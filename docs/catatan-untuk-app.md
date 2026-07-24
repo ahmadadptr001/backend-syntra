@@ -7,6 +7,30 @@ pencarian, dan menu — semuanya dalam tema gelap `#121212` dengan font **Ralewa
 
 ---
 
+## 🟢 Feed global: room.created + reel.new/deleted (2026-07-24, ronde 8)
+
+Sisa event realtime dari poin 11 sudah beres — **cakupan realtime kini lengkap**.
+Karena room & reel baru tidak terikat satu percakapan/pengguna, ada **dua topik
+feed global** yang app langgan lewat frame `subscribe`:
+
+| Topik | Kapan langgan | Event | Payload |
+|---|---|---|---|
+| `rooms:all` | tab Rooms terbuka | `room.created` | `{room_id,title,host_id,host_name,participant_count,visibility}` |
+| `reels:all` | tab Shorts terbuka | `reel.new` | `{reel_id,author_id}` (ambil detail via `GET /reels/{id}`) |
+| `reels:all` | tab Shorts terbuka | `reel.deleted` | `{reel_id}` |
+
+```
+{"type":"subscribe","data":{"topics":["rooms:all"]}}     // saat buka tab Rooms
+{"type":"unsubscribe","data":{"topics":["rooms:all"]}}   // saat pindah tab
+```
+
+Dengan ini **polling 8-detik daftar room bisa dibuang**. Hanya konten **publik**
+yang diumumkan (room `followers`/`invite_only` & reel `followers`/`private`
+tidak) — jadi tak ada kebocoran visibilitas. **Tanpa migrasi** (murni Go, sudah
+aktif di server yang jalan).
+
+---
+
 ## 🌐 Peta realtime menyeluruh — supaya app "mengerti" (2026-07-24, ronde 7)
 
 Arah proyek: **Syntra realtime end-to-end** — tiap layar ikut berubah sendiri
@@ -20,7 +44,9 @@ yang bisa diandalkan hidup dan mana yang masih perlu tarik-ulang.
   ke topik pribadinya `user:<id>` (notifikasi, sinkron antar-perangkat).
 - Topik lain **dilanggan manual** sesuai layar yang terbuka:
   `conversation:<id>` (chat dibuka), `room:<id>` (voice room), `reel:<id>`
-  (menonton reel — counter like/komentar).
+  (menonton reel — counter like/komentar), dan **feed global** `rooms:all`
+  (tab Rooms terbuka) & `reels:all` (tab Shorts terbuka). Lepas langganan feed
+  global saat pindah tab.
 - Saat reconnect, **tarik ulang** state layar yang terbuka (`GET .../messages`
   dll.) — Pub/Sub bersifat at-most-once, jadi yang lewat saat putus bisa hilang.
 
@@ -42,20 +68,13 @@ yang bisa diandalkan hidup dan mana yang masih perlu tarik-ulang.
 | `user:<id>` | `story.new` | **BARU** — story baru dari yang di-follow/ajak chat; refresh story row via `GET /stories` |
 | `room:<id>` | `room.ended/participants/speak_request/role_changed/join_decided/message` | voice room |
 | `reel:<id>` | (counter like/komentar per reel yang ditonton) | interaksi reel |
+| `rooms:all` | `room.created` | **BARU** — room **publik** baru muncul di Voice Hub; polling 8-detik bisa dibuang |
+| `reels:all` | `reel.new`, `reel.deleted` | **BARU** — reel **publik** baru/terhapus di feed Shorts |
 
-### 🔜 Menyusul (masih perlu dikerjakan backend — belum live)
-
-Ini yang app **masih boleh polling/refresh** sampai ada kabar "sudah live":
-
-| Event | Untuk | Catatan desain |
-|---|---|---|
-| `room.created` | Voice Hub tahu ada room baru | butuh **topik feed global** `rooms` yang dilanggan saat tab Rooms terbuka |
-| `reel.new` / `reel.deleted` | feed Shorts tahu reel baru/terhapus | butuh **topik feed global** `reels` yang dilanggan saat tab Shorts terbuka |
-
-> Dua topik feed global (`rooms`, `reels`) adalah keputusan arsitektur berikutnya:
-> saat ini topik hanya `user/conversation/room/reel`. Begitu topik global itu
-> ada, `room.created` & `reel.new` langsung menyusul dan polling 8-detik kalian
-> bisa dibuang.
+> **Cakupan realtime kini lengkap** untuk semua yang masuk akal di-realtime-kan.
+> Room `followers`/`invite_only` dan reel `followers`/`private` sengaja TIDAK
+> diumumkan ke feed global (mencegah bocor visibilitas) — keduanya tetap muncul
+> lewat `GET /rooms` / `GET /reels` seperti biasa.
 
 ### 🚫 Sengaja TIDAK realtime (jangan tunggu event-nya)
 

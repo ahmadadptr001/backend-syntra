@@ -151,6 +151,12 @@ media server belum dikonfigurasi dan bergabung tidak akan menghasilkan suara.
 
 `visibility`: `public` | `followers` | `invite_only`. Default `public`.
 
+Kalau room-nya `public`, event **`room.created`** disiarkan ke feed global
+`rooms:all` (`{room_id, title, host_id, host_name, participant_count,
+visibility}`) — Voice Hub orang lain menyisipkannya tanpa polling. Langgan
+`rooms:all` lewat frame `subscribe` saat tab Rooms terbuka, lepas saat pindah
+tab. Room `followers`/`invite_only` **tidak** diumumkan ke feed ini.
+
 ### `POST /api/v1/rooms/{id}/join`
 
 Ini endpoint terpenting.
