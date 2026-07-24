@@ -29,6 +29,27 @@ akun/domain (sekali) lalu dua perintah skrip.
 
 ---
 
+## Uji cepat tanpa domain (opsional) — `-Quick`
+
+Kalau hanya ingin **link API yang langsung jalan sekarang** tanpa repot akun/
+domain, pakai quick tunnel. Backend (Go + nginx) harus sudah jalan dulu.
+
+```powershell
+cd C:\Users\user\Documents\PROJECTS\syntra\backend-syntra\server
+.\tunnel.ps1 -Quick
+```
+
+Ia mencetak URL HTTPS acak seperti `https://kata-acak.trycloudflare.com`.
+
+> **Ini bukan alamat tetap.** URL-nya **berubah setiap kali dijalankan** dan mati
+> begitu laptop tidur/cloudflared berhenti. Cocok untuk uji sekali jalan, bukan
+> untuk dipasang di aplikasi secara permanen — untuk itu pakai `-Setup` + `-Run`
+> dengan domain (di bawah). Aplikasi Android (OkHttp) tidak mengirim header
+> `Origin`, jadi REST & WebSocket tetap jalan walau URL acak ini belum terdaftar
+> di `HTTP_CORS_ORIGINS`/`WS_ALLOWED_ORIGINS`.
+
+---
+
 ## Langkah 1 — punya domain di Cloudflare (sekali, manual)
 
 Cloudflare Tunnel butuh satu **domain (zone)** di akun Cloudflare-mu. Pilih

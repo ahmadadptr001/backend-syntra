@@ -15,6 +15,9 @@
 #   .\tunnel.ps1 -Status                           # cek jalan/tidak
 #   .\tunnel.ps1 -Stop                             # hentikan
 #
+# Uji cepat tanpa domain/login (URL acak *.trycloudflare.com, berubah tiap jalan):
+#   .\tunnel.ps1 -Quick
+#
 # Catatan: skrip ini sengaja ASCII-only. Windows PowerShell 5.1 membaca berkas
 # tanpa BOM sebagai ANSI, dan karakter seperti em-dash bisa salah-terbaca jadi
 # tanda kutip yang memecah parser.
@@ -22,6 +25,7 @@
 param(
     [switch]$Setup,
     [switch]$Run,
+    [switch]$Quick,
     [switch]$Status,
     [switch]$Stop,
     [string]$Hostname,
@@ -147,6 +151,46 @@ if ($Run) {
 }
 
 # --------------------------------------------------------------------------
+# Quick tunnel: TANPA akun/domain/login. Dapat URL HTTPS acak *.trycloudflare.com
+# yang langsung jalan. Untuk uji cepat saja: URL-nya BERUBAH tiap dijalankan dan
+# tidak untuk dipakai tetap. Untuk alamat tetap, pakai -Setup + -Run.
+if ($Quick) {
+    New-Item -ItemType Directory -Force $logsDir | Out-Null
+    $qlog = Join-Path $logsDir "quicktunnel.log"
+
+    Get-Process cloudflared -ErrorAction SilentlyContinue | Stop-Process -Force
+    Start-Sleep -Milliseconds 300
+
+    Start-Process cloudflared -ArgumentList "tunnel", "--no-autoupdate", "--url", $Local `
+        -WindowStyle Hidden -RedirectStandardOutput "$qlog.out" -RedirectStandardError $qlog
+
+    Write-Host "Menunggu URL quick tunnel (URL ini ACAK & berubah tiap dijalankan)..." -ForegroundColor Yellow
+    $url = $null
+    for ($i = 0; $i -lt 25; $i++) {
+        Start-Sleep -Seconds 1
+        if (Test-Path $qlog) {
+            $m = Select-String -Path $qlog -Pattern 'https://[a-z0-9-]+\.trycloudflare\.com' -AllMatches | Select-Object -First 1
+            if ($m) { $url = $m.Matches[0].Value; break }
+        }
+    }
+    if (-not $url) { Write-Host "URL belum muncul. Cek $qlog" -ForegroundColor Red; exit 1 }
+
+    # Tunggu koneksi edge benar-benar terdaftar, kalau tidak akses awal balas 1033.
+    for ($i = 0; $i -lt 15; $i++) {
+        if (Select-String -Path $qlog -Pattern 'Registered tunnel connection' -Quiet) { break }
+        Start-Sleep -Seconds 1
+    }
+
+    Write-Host ""
+    Write-Host "API (sementara): $url" -ForegroundColor Green
+    Write-Host "  REST : $url/api/v1/..."
+    Write-Host "  WS   : $($url -replace '^https','wss')/api/v1/ws"
+    Write-Host "  cek  : $url/healthz"
+    Write-Host "Berhenti: .\tunnel.ps1 -Stop"
+    exit 0
+}
+
+# --------------------------------------------------------------------------
 if ($Status) {
     $p = Get-Process cloudflared -ErrorAction SilentlyContinue
     if ($p) {
@@ -166,5 +210,5 @@ if ($Stop) {
     exit 0
 }
 
-Write-Host "Pakai salah satu: -Setup -Hostname HOST | -Run | -Status | -Stop"
+Write-Host "Pakai salah satu: -Setup -Hostname HOST | -Run | -Quick | -Status | -Stop"
 Write-Host "Lihat docs/cloudflare-tunnel.md untuk langkah lengkap."
