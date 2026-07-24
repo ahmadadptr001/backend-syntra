@@ -60,6 +60,11 @@ type Client struct {
 	// disiarkan. Bawaannya true; disetel false untuk pengguna yang mematikan
 	// privasi presence, sehingga ia tak pernah tampak online bagi lawan bicara.
 	TrackPresence bool
+
+	// OnPong dipanggil tiap pong diterima — dipakai handler untuk menyegarkan
+	// TTL presence, supaya koneksi yang hidup tapi sepi tidak "kedaluwarsa jadi
+	// offline" padahal pengguna masih tersambung.
+	OnPong func()
 }
 
 func newClient(conn *websocket.Conn, p auth.Principal, hub *Hub, router *Router, opts Options, log *slog.Logger) *Client {
@@ -143,6 +148,9 @@ func (c *Client) readPump(ctx context.Context) {
 	// Setiap pong menggeser deadline baca. Inilah yang membedakan koneksi
 	// yang benar-benar mati dari koneksi yang sekadar sedang sepi.
 	c.conn.SetPongHandler(func(string) error {
+		if c.OnPong != nil {
+			c.OnPong()
+		}
 		return c.conn.SetReadDeadline(time.Now().Add(c.opts.PongWait))
 	})
 

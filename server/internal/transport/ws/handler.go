@@ -78,6 +78,13 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			// menghalangi pengguna memakai chat.
 			h.log.Warn("ws: gagal menandai online", "error", err, "user_id", principal.UserID)
 		}
+		// Segarkan TTL presence tiap pong (±25 detik) supaya koneksi yang hidup
+		// tapi sepi tidak keburu kedaluwarsa jadi offline padahal masih tersambung.
+		// Konteks dilepas dari pembatalan request agar tetap valid selama koneksi.
+		presenceCtx := context.WithoutCancel(r.Context())
+		client.OnPong = func() {
+			_ = h.presence.Online(presenceCtx, principal.UserID)
+		}
 	}
 
 	go client.writePump()
