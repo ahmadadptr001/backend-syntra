@@ -6,10 +6,20 @@ import "time"
 // klien Kotlin — mengubah nilainya berarti merusak aplikasi yang sudah rilis.
 const (
 	EventMessageNew          = "message.new"
+	EventMessageUpdated      = "message.updated"
 	EventMessageRead         = "message.read"
 	EventTyping              = "typing"
 	EventConversationUpdated = "conversation.updated"
 )
+
+// MessageUpdatedEvent disiarkan saat sebuah pesan diedit, supaya perangkat lain
+// mengganti isinya di tempat alih-alih menambah baris baru.
+type MessageUpdatedEvent struct {
+	ID             string    `json:"id"`
+	ConversationID string    `json:"conversation_id"`
+	Body           string    `json:"body"`
+	EditedAt       time.Time `json:"edited_at"`
+}
 
 // MessageEvent adalah bentuk payload yang dikirim ke klien.
 //

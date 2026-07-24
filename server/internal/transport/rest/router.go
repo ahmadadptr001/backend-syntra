@@ -108,9 +108,13 @@ func NewRouter(d Deps) http.Handler {
 		protected(http.HandlerFunc(d.Chat.React)))
 	mux.Handle("DELETE /api/v1/messages/{id}",
 		protected(http.HandlerFunc(d.Chat.DeleteMessage)))
+	mux.Handle("PATCH /api/v1/messages/{id}",
+		protected(http.HandlerFunc(d.Chat.EditMessage)))
 	// Bentuk bersarang yang dipakai aplikasi — setara dengan yang di atas.
 	mux.Handle("DELETE /api/v1/conversations/{id}/messages/{message_id}",
 		protected(http.HandlerFunc(d.Chat.DeleteMessageNested)))
+	mux.Handle("PATCH /api/v1/conversations/{id}/messages/{message_id}",
+		protected(http.HandlerFunc(d.Chat.EditMessageNested)))
 
 	// --- story ---
 	mux.Handle("GET /api/v1/stories",

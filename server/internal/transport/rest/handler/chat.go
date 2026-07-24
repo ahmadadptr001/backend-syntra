@@ -21,6 +21,7 @@ type ChatService interface {
 	StartDirect(ctx context.Context, userID, otherID string) (string, error)
 	CreateGroup(ctx context.Context, userID, title string, memberIDs []string) (string, error)
 	DeleteMessage(ctx context.Context, messageID, userID string) error
+	EditMessage(ctx context.Context, messageID, userID, body string) error
 	ClearConversation(ctx context.Context, conversationID, userID string) error
 	DeleteConversation(ctx context.Context, conversationID, userID string) error
 
@@ -339,6 +340,43 @@ func (h *Chat) DeleteMessageNested(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.svc.DeleteMessage(r.Context(), messageID, auth.UserID(r.Context())); err != nil {
+		writeDomainError(w, r, err)
+		return
+	}
+	httpx.NoContent(w)
+}
+
+type editMessageRequest struct {
+	Body string `json:"body"`
+}
+
+// EditMessage menangani PATCH /api/v1/messages/{id}.
+//
+// Hanya pengirimnya, hanya pesan teks. Menyiarkan message.updated supaya
+// perangkat lain mengganti isinya di tempat, bukan menambah baris baru.
+func (h *Chat) EditMessage(w http.ResponseWriter, r *http.Request) {
+	h.editMessage(w, r, r.PathValue("id"))
+}
+
+// EditMessageNested menangani PATCH /api/v1/conversations/{id}/messages/{message_id}.
+// Bentuk bersarang yang dipakai aplikasi; setara dengan yang di atas.
+func (h *Chat) EditMessageNested(w http.ResponseWriter, r *http.Request) {
+	h.editMessage(w, r, r.PathValue("message_id"))
+}
+
+func (h *Chat) editMessage(w http.ResponseWriter, r *http.Request, messageID string) {
+	if messageID == "" {
+		httpx.Fail(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "id pesan tidak boleh kosong")
+		return
+	}
+
+	var req editMessageRequest
+	if err := httpx.DecodeJSON(w, r, &req); err != nil {
+		httpx.Fail(w, r, http.StatusBadRequest, httpx.CodeBadRequest, err.Error())
+		return
+	}
+
+	if err := h.svc.EditMessage(r.Context(), messageID, auth.UserID(r.Context()), req.Body); err != nil {
 		writeDomainError(w, r, err)
 		return
 	}

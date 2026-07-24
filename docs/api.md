@@ -184,7 +184,9 @@ Seluruh baris di tabel ini **diverifikasi jalan** lewat `server/scripts/smoke.ps
 | `DELETE` | `/api/v1/conversations/{id}/messages` | ✅ |
 | `DELETE` | `/api/v1/conversations/{id}` | ✅ |
 | `DELETE` | `/api/v1/messages/{id}` | ✅ |
+| `PATCH` | `/api/v1/messages/{id}` | ✅ |
 | `DELETE` | `/api/v1/conversations/{id}/messages/{message_id}` | ✅ |
+| `PATCH` | `/api/v1/conversations/{id}/messages/{message_id}` | ✅ |
 | `GET` | `/api/v1/conversations/{id}` | ✅ |
 | `PATCH` | `/api/v1/conversations/{id}` | ✅ |
 | `POST` | `/api/v1/conversations/{id}/leave` | ✅ |
@@ -433,6 +435,22 @@ Menghapus satu pesan. Hanya pengirimnya — `403` untuk yang lain. Balasan `204`
 **Soft delete.** Barisnya tetap muncul di riwayat dengan `is_deleted: true` dan
 `body` kosong, supaya urutan pesan tidak berlubang bagi peserta lain. Tampilkan
 sebagai "pesan ini dihapus".
+
+### `PATCH /api/v1/messages/{id}`
+
+Mengubah isi pesan. Hanya pengirimnya (`403` untuk yang lain), hanya **pesan
+teks** (`400` untuk media/sistem), hanya yang belum dihapus.
+
+```json
+{ "body": "teks baru" }
+```
+
+Balasan `204`. `edited_at` pesan terisi (klien tampilkan label "diedit"), dan
+event realtime **`message.updated`** disiarkan ke `conversation:<id>` berisi
+`{ id, conversation_id, body, edited_at }` — ganti isi pesan di tempat, jangan
+tambah baris baru. Body kosong `400`, melebihi 4000 karakter `400`.
+
+> Alias: `PATCH /api/v1/conversations/{id}/messages/{message_id}` sama persis.
 
 ### `DELETE /api/v1/conversations/{id}/messages`
 
@@ -1394,6 +1412,7 @@ diganti dengan yang otoritatif dari server begitu `ack` tiba.
 | `error` | permintaan gagal, lihat `error.code` |
 | `pong` | balasan `ping` |
 | `message.new` | pesan baru pada topik percakapan yang dilanggan |
+| `message.updated` | sebuah pesan diedit — ganti isinya di tempat pakai `body` baru |
 | `message.read` | perangkat lain milik pengguna yang sama menandai sudah dibaca |
 | `typing` | anggota lain sedang mengetik |
 | `presence.update` | seseorang menjadi online/offline |

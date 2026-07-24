@@ -212,6 +212,29 @@ func (r *ChatRepository) DeleteMessage(ctx context.Context, messageID, userID st
 	return nil
 }
 
+type editMessageRow struct {
+	ConversationID string    `json:"out_conversation_id"`
+	EditedAt       time.Time `json:"out_edited_at"`
+}
+
+// EditMessage memanggil fungsi edit_message. Mengembalikan percakapan tempat
+// pesan berada (untuk siaran) dan waktu edit.
+func (r *ChatRepository) EditMessage(ctx context.Context, messageID, userID, body string) (string, time.Time, error) {
+	actor, err := actorOption(ctx, userID)
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	var rows []editMessageRow
+	if err := r.client.RPC(ctx, "edit_message",
+		map[string]any{"p_message": messageID, "p_body": body}, &rows, actor); err != nil {
+		return "", time.Time{}, translate(err)
+	}
+	if len(rows) == 0 {
+		return "", time.Time{}, chat.ErrNotFound
+	}
+	return rows[0].ConversationID, rows[0].EditedAt, nil
+}
+
 // ClearConversation memanggil fungsi clear_conversation.
 func (r *ChatRepository) ClearConversation(ctx context.Context, conversationID, userID string) error {
 	actor, err := actorOption(ctx, userID)

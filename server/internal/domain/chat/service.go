@@ -326,6 +326,34 @@ func (s *Service) DeleteMessage(ctx context.Context, messageID, userID string) e
 	return s.repo.DeleteMessage(ctx, messageID, userID)
 }
 
+// EditMessage mengubah isi pesan teks milik pemanggil, lalu menyiarkan
+// message.updated supaya perangkat lain mengganti isinya di tempat.
+func (s *Service) EditMessage(ctx context.Context, messageID, userID, body string) error {
+	if messageID == "" || userID == "" {
+		return ErrInvalidInput
+	}
+	body = strings.TrimSpace(body)
+	if body == "" {
+		return ErrEmptyBody
+	}
+	if utf8.RuneCountInString(body) > MaxBodyLength {
+		return ErrBodyTooLong
+	}
+
+	conversationID, editedAt, err := s.repo.EditMessage(ctx, messageID, userID, body)
+	if err != nil {
+		return err
+	}
+
+	if err := s.pub.Publish(ctx, topic.Conversation(conversationID), EventMessageUpdated, MessageUpdatedEvent{
+		ID: messageID, ConversationID: conversationID, Body: body, EditedAt: editedAt,
+	}); err != nil {
+		s.log.Warn("chat: pesan diedit tapi gagal disiarkan",
+			"error", err, "message_id", messageID, "conversation_id", conversationID)
+	}
+	return nil
+}
+
 // ClearConversation mengosongkan riwayat percakapan HANYA untuk pemanggil.
 //
 // Menghapus pesan orang lain dari layar mereka bukan wewenang siapa pun di

@@ -155,6 +155,7 @@ type Repository interface {
 	CreateDirect(ctx context.Context, userID, otherID string) (string, error)
 	CreateGroup(ctx context.Context, userID, title string, memberIDs []string) (string, error)
 	DeleteMessage(ctx context.Context, messageID, userID string) error
+	EditMessage(ctx context.Context, messageID, userID, body string) (conversationID string, editedAt time.Time, err error)
 	ClearConversation(ctx context.Context, conversationID, userID string) error
 	DeleteConversation(ctx context.Context, conversationID, userID string) error
 
