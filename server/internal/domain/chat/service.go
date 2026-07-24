@@ -461,15 +461,17 @@ func (s *Service) MarkRead(ctx context.Context, conversationID, userID, messageI
 		return fmt.Errorf("chat: gagal menandai dibaca: %w", err)
 	}
 
-	// Disiarkan ke topik pengguna, bukan topik percakapan: tujuannya
-	// menyelaraskan badge unread antar perangkat milik orang yang sama.
+	// Disiarkan ke topik PERCAKAPAN supaya LAWAN BICARA tahu pesannya sudah
+	// dibaca (centang biru), sekaligus menyelaraskan badge antar perangkat si
+	// pembaca. UserID disertakan agar klien membedakan: kalau UserID == dirinya,
+	// itu sinkron badge; kalau UserID == lawan, itulah pemicu centang biru.
 	event := ReadEvent{
 		ConversationID: conversationID,
 		UserID:         userID,
 		MessageID:      messageID,
 		ReadAt:         time.Now().UTC(),
 	}
-	if err := s.pub.Publish(ctx, topic.User(userID), EventMessageRead, event); err != nil {
+	if err := s.pub.Publish(ctx, topic.Conversation(conversationID), EventMessageRead, event); err != nil {
 		s.log.Warn("chat: gagal menyiarkan status dibaca", "error", err, "user_id", userID)
 	}
 
