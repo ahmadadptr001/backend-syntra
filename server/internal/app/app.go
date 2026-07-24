@@ -37,6 +37,7 @@ import (
 	repo "github.com/ahmadadptr001/backend-syntra/internal/repository/supabase"
 	"github.com/ahmadadptr001/backend-syntra/internal/transport/rest"
 	"github.com/ahmadadptr001/backend-syntra/internal/transport/rest/handler"
+	"github.com/ahmadadptr001/backend-syntra/internal/transport/rest/middleware"
 	"github.com/ahmadadptr001/backend-syntra/internal/transport/ws"
 )
 
@@ -132,6 +133,17 @@ func New(ctx context.Context, cfg *config.Config, log *slog.Logger) (*App, error
 	// --- transport: rest ---
 	verifier := newVerifier(cfg, supa, log)
 
+	// Rate limit per pengguna (melengkapi batas per-IP nginx). Dimatikan kalau
+	// RATE_LIMIT_PER_MINUTE <= 0 — limiter dibiarkan nil dan rutenya tidak
+	// dibungkus sama sekali.
+	var limiter middleware.Limiter
+	if rl := redisstore.NewRateLimiter(rdb, cfg.RateLimit.PerMinute, time.Minute, log); !rl.Disabled() {
+		limiter = rl
+		log.Info("rate limit per pengguna aktif", "per_minute", cfg.RateLimit.PerMinute)
+	} else {
+		log.Info("rate limit per pengguna dimatikan (RATE_LIMIT_PER_MINUTE <= 0)")
+	}
+
 	router := rest.NewRouter(rest.Deps{
 		Log:              log,
 		Verifier:         verifier,
@@ -139,6 +151,7 @@ func New(ctx context.Context, cfg *config.Config, log *slog.Logger) (*App, error
 		AllowDebugHeader: cfg.Auth.DevBypass && !cfg.IsProduction(),
 		WSPath:           cfg.WS.Path,
 		WSHandler:        wsHandler,
+		Limiter:          limiter,
 		Health: handler.NewHealth(cfg.Version, map[string]handler.Check{
 			"supabase": supa.Ping,
 			"redis":    func(ctx context.Context) error { return rdb.Ping(ctx).Err() },

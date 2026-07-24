@@ -159,9 +159,16 @@ penerjemah error untuk kedua transport.
 | `not_found` | 404 | tidak ada | jangan diulang |
 | `conflict` | 409 | bentrok status | belum dipakai |
 | `payload_too_large` | 413 | body > 1 MB | perkecil |
-| `rate_limited` | 429 | terlalu sering | mundur eksponensial |
+| `rate_limited` | 429 | terlalu sering | hormati header **`Retry-After`** (detik), lalu mundur eksponensial |
 | `internal` | 500 | kesalahan server | ulangi dengan backoff |
 | `unknown_type` | — | khusus WS: tipe frame tak dikenal | bug klien |
+
+> **Rate limit per pengguna (REST).** Selain batas per-IP di nginx, tiap
+> pengguna dibatasi **±240 permintaan/menit** (jendela tetap; dapat disetel
+> lewat `RATE_LIMIT_PER_MINUTE`). Saat terlampaui, balasannya `429 rate_limited`
+> dengan header `Retry-After` berisi detik sampai jendela reset — app sebaiknya
+> menunggu selama itu sebelum mencoba lagi. Batas ini longgar untuk pemakaian
+> normal; yang menyentuhnya biasanya loop tak sengaja.
 
 ---
 

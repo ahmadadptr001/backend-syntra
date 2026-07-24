@@ -23,13 +23,25 @@ type Config struct {
 	// "kenapa nilainya bukan yang saya kira".
 	EnvFile string
 
-	HTTP     HTTP
-	WS       WS
-	Supabase Supabase
-	Redis    Redis
-	Auth     Auth
-	LiveKit  LiveKit
-	Log      Log
+	HTTP      HTTP
+	WS        WS
+	Supabase  Supabase
+	Redis     Redis
+	Auth      Auth
+	LiveKit   LiveKit
+	RateLimit RateLimit
+	Log       Log
+}
+
+// RateLimit membatasi jumlah permintaan REST per pengguna.
+//
+// Melengkapi batas per-IP di nginx: satu IP bisa menaungi banyak pengguna
+// (NAT kampus/kantor), dan satu pengguna bisa berpindah IP. Batas per-pengguna
+// menegakkan keadilan pada tingkat identitas, bukan alamat jaringan.
+type RateLimit struct {
+	// PerMinute adalah jumlah permintaan maksimum per pengguna per menit.
+	// <= 0 mematikan rate limiting per pengguna sepenuhnya.
+	PerMinute int
 }
 
 // HTTP mengatur listener REST.
@@ -173,6 +185,9 @@ func Load() (*Config, error) {
 			APIKey:    l.str("LIVEKIT_API_KEY", ""),
 			APISecret: l.str("LIVEKIT_API_SECRET", ""),
 			URL:       l.str("LIVEKIT_URL", ""),
+		},
+		RateLimit: RateLimit{
+			PerMinute: l.num("RATE_LIMIT_PER_MINUTE", 240),
 		},
 		Log: Log{
 			Level:  l.str("LOG_LEVEL", "info"),

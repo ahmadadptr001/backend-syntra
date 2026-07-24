@@ -30,6 +30,10 @@ type Deps struct {
 	WSPath    string
 	WSHandler http.Handler
 
+	// Limiter membatasi permintaan REST per pengguna. Boleh nil (mis. saat
+	// dimatikan lewat config) — rutenya tetap terpasang tanpa pembatasan.
+	Limiter middleware.Limiter
+
 	Health  *handler.Health
 	Account *handler.Account
 	Chat    *handler.Chat
@@ -65,9 +69,19 @@ func NewRouter(d Deps) http.Handler {
 	mux.HandleFunc("POST /api/v1/sfu/webhook", d.Call.Webhook)
 
 	// --- REST terproteksi ---
-	protected := middleware.Auth(d.Verifier, middleware.AuthOptions{
+	//
+	// protected = Auth lalu (bila diaktifkan) RateLimit per pengguna. Auth di
+	// lapisan luar supaya identitas sudah tersemat saat RateLimit membaca
+	// auth.UserID; tanpa Limiter, rutenya tetap jalan tanpa pembatasan.
+	authMW := middleware.Auth(d.Verifier, middleware.AuthOptions{
 		AllowDebugHeader: d.AllowDebugHeader,
 	})
+	protected := func(h http.Handler) http.Handler {
+		if d.Limiter != nil {
+			h = middleware.RateLimit(d.Limiter)(h)
+		}
+		return authMW(h)
+	}
 
 	// --- percakapan ---
 	mux.Handle("GET /api/v1/conversations",
