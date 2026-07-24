@@ -3,8 +3,14 @@
 Konfigurasinya ada di [`nginx.conf`](nginx.conf).
 
 **Panduan lengkap menjalankan proyek dari laptop baru dinyalakan ada di
-[`../../../docs/nginx.md`](../../../docs/nginx.md)** — termasuk urutan startup, port forwarding,
-firewall, dan troubleshooting.
+[`../../../docs/nginx.md`](../../../docs/nginx.md)** — termasuk prasyarat, Quick
+Start satu perintah, urutan startup, port forwarding, firewall, dan
+troubleshooting.
+
+> Jalan tercepat kalau laptop sudah disetup: `powershell -ExecutionPolicy Bypass
+> -File .\start.ps1` dari folder `server` — menyalakan Redis, server Go, dan
+> nginx sekaligus. nginx di bawah ini hanya perlu disentuh manual saat menguji
+> atau mengubah `nginx.conf`.
 
 ## Ringkas
 

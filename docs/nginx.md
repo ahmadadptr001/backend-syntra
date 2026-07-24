@@ -16,6 +16,64 @@ Router meneruskan trafik dari internet ke laptop ini.
 
 ---
 
+## ⚡ Paling cepat — kalau laptop sudah pernah disetup
+
+Backend ini terdiri dari **tiga proses**: Redis (Memurai), server Go, dan nginx.
+Kamu tidak perlu menyalakannya satu per satu — `start.ps1` melakukan ketiganya
+sekaligus lalu memverifikasi:
+
+```powershell
+cd C:\Users\user\Documents\PROJECTS\backend-syntra\server
+powershell -ExecutionPolicy Bypass -File .\start.ps1
+```
+
+**Berhasil** kalau baris terakhir menampilkan:
+
+```json
+{"redis":"ok","supabase":"ok","ready":true}
+```
+
+Itu saja untuk menjalankan. Kalau kamu baru **mengubah kode Go**, build dulu
+sebelum `start.ps1`:
+
+```powershell
+go build -o bin\syntra.exe .\cmd\syntra
+```
+
+`start.ps1` aman dijalankan berulang — ia menghentikan proses lama sebelum
+menyalakan yang baru, jadi ini juga cara **restart**. Selesai. Bagian-bagian di
+bawah hanya kamu butuhkan saat pertama kali menyiapkan laptop, saat membuka
+akses dari internet, atau saat ada yang bermasalah.
+
+---
+
+## Prasyarat — sekali pasang di laptop baru
+
+Sebelum `start.ps1` bisa jalan, empat hal ini harus ada. Cek dulu; kalau semua
+lolos, langsung ke Quick Start di atas.
+
+| Yang dibutuhkan | Cek | Kalau belum ada |
+|---|---|---|
+| **Go** (untuk build server) | `go version` | pasang dari [go.dev/dl](https://go.dev/dl/) |
+| **nginx** | `nginx -v` | pasang, pastikan `nginx` ada di PATH |
+| **Memurai** (Redis untuk Windows) | `Get-Service Memurai` | pasang dari [memurai.com](https://www.memurai.com/); ia otomatis jadi service |
+| **Berkas `.env` sudah terisi** | `Test-Path server\.env` | `Copy-Item server\.env.example server\.env`, lalu isi `SUPABASE_*`, `REDIS_URL`, dan (untuk panggilan) `LIVEKIT_*` |
+
+Build pertama kali sekaligus mengunduh dependensi Go:
+
+```powershell
+cd C:\Users\user\Documents\PROJECTS\backend-syntra\server
+go build -o bin\syntra.exe .\cmd\syntra
+```
+
+> **Supabase & migrasi database.** Server bicara ke Supabase online lewat HTTP —
+> tidak ada database lokal yang perlu dinyalakan. Tapi fitur-fitur baru butuh
+> fungsi SQL-nya dijalankan dulu di **Supabase → SQL Editor** (berkas di
+> `server/migrations/`). Tanpa itu, endpoint terkait membalas `404` walau server
+> jalan normal.
+
+---
+
 ## 0. Yang sudah otomatis jalan
 
 Tidak perlu disentuh — berjalan sebagai Windows Service dengan startup
