@@ -293,10 +293,20 @@ func (s *Service) React(ctx context.Context, messageID, userID, emoji string) er
 	if messageID == "" || userID == "" {
 		return ErrInvalidInput
 	}
-	// Reaksi muncul di layar peserta lain saat mereka memuat ulang reaksi
-	// pesan itu; belum ada siaran realtime karena repo tidak mengembalikan
-	// id percakapan yang dibutuhkan untuk menargetkan topik.
-	return s.repo.React(ctx, messageID, userID, emoji)
+	conversationID, err := s.repo.React(ctx, messageID, userID, emoji)
+	if err != nil {
+		return err
+	}
+
+	// Siarkan supaya reaksi (tambah/ganti/hapus — emoji kosong = hapus) muncul
+	// realtime di layar peserta lain tanpa perlu memuat ulang reaksi pesan.
+	if err := s.pub.Publish(ctx, topic.Conversation(conversationID), EventMessageReaction, ReactionEvent{
+		MessageID: messageID, ConversationID: conversationID, UserID: userID, Emoji: emoji,
+	}); err != nil {
+		s.log.Warn("chat: reaksi tersimpan tapi gagal disiarkan",
+			"error", err, "message_id", messageID, "conversation_id", conversationID)
+	}
+	return nil
 }
 
 // Reactions mengembalikan reaksi untuk sekumpulan pesan sekaligus.
@@ -323,7 +333,20 @@ func (s *Service) DeleteMessage(ctx context.Context, messageID, userID string) e
 	if messageID == "" || userID == "" {
 		return ErrInvalidInput
 	}
-	return s.repo.DeleteMessage(ctx, messageID, userID)
+	conversationID, err := s.repo.DeleteMessage(ctx, messageID, userID)
+	if err != nil {
+		return err
+	}
+
+	// Siarkan supaya perangkat lawan bicara menandai "pesan ini dihapus"
+	// seketika, alih-alih baru tahu saat chat dibuka ulang.
+	if err := s.pub.Publish(ctx, topic.Conversation(conversationID), EventMessageDeleted, MessageDeletedEvent{
+		MessageID: messageID, ConversationID: conversationID,
+	}); err != nil {
+		s.log.Warn("chat: pesan dihapus tapi gagal disiarkan",
+			"error", err, "message_id", messageID, "conversation_id", conversationID)
+	}
+	return nil
 }
 
 // EditMessage mengubah isi pesan teks milik pemanggil, lalu menyiarkan

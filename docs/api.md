@@ -440,6 +440,10 @@ Menghapus satu pesan. Hanya pengirimnya — `403` untuk yang lain. Balasan `204`
 `body` kosong, supaya urutan pesan tidak berlubang bagi peserta lain. Tampilkan
 sebagai "pesan ini dihapus".
 
+Event realtime **`message.deleted`** disiarkan ke `conversation:<id>` berisi
+`{ conversation_id, message_id }` — perangkat lawan bicara menandainya seketika
+tanpa harus membuka ulang chat.
+
 ### `PATCH /api/v1/messages/{id}`
 
 Mengubah isi pesan. Hanya pengirimnya (`403` untuk yang lain), hanya **pesan
@@ -620,6 +624,10 @@ yang lama.
 
 Kirim `emoji` kosong (`""`) atau `null` untuk **menghapus** reaksi. Balasan
 `204`. Pemanggil harus anggota percakapan pesan tersebut.
+
+Event realtime **`message.reaction`** disiarkan ke `conversation:<id>` berisi
+`{ conversation_id, message_id, user_id, emoji }` (emoji kosong = dihapus) —
+reaksi muncul di layar peserta lain tanpa memuat ulang.
 
 ### `PUT /api/v1/messages/{id}/star` · `DELETE /api/v1/messages/{id}/star`
 
@@ -1487,6 +1495,8 @@ diganti dengan yang otoritatif dari server begitu `ack` tiba.
 | `pong` | balasan `ping` |
 | `message.new` | pesan baru pada topik percakapan yang dilanggan |
 | `message.updated` | sebuah pesan diedit — ganti isinya di tempat pakai `body` baru |
+| `message.deleted` | sebuah pesan dihapus — `{"conversation_id","message_id"}`, tandai "pesan ini dihapus" |
+| `message.reaction` | reaksi berubah — `{"conversation_id","message_id","user_id","emoji"}`; `emoji` kosong = dihapus |
 | `message.read` | perangkat lain milik pengguna yang sama menandai sudah dibaca |
 | `typing` | anggota lain sedang mengetik |
 | `presence.update` | seseorang menjadi online/offline |

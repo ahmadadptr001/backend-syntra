@@ -7,10 +7,28 @@ import "time"
 const (
 	EventMessageNew          = "message.new"
 	EventMessageUpdated      = "message.updated"
+	EventMessageDeleted      = "message.deleted"
+	EventMessageReaction     = "message.reaction"
 	EventMessageRead         = "message.read"
 	EventTyping              = "typing"
 	EventConversationUpdated = "conversation.updated"
 )
+
+// MessageDeletedEvent disiarkan saat sebuah pesan dihapus, supaya perangkat lain
+// menandainya "pesan ini dihapus" seketika alih-alih menunggu chat dibuka ulang.
+type MessageDeletedEvent struct {
+	MessageID      string `json:"message_id"`
+	ConversationID string `json:"conversation_id"`
+}
+
+// ReactionEvent disiarkan saat reaksi ditambah, diganti, atau dihapus (emoji
+// kosong = dihapus), supaya reaksi muncul realtime di layar peserta lain.
+type ReactionEvent struct {
+	MessageID      string `json:"message_id"`
+	ConversationID string `json:"conversation_id"`
+	UserID         string `json:"user_id"`
+	Emoji          string `json:"emoji,omitempty"`
+}
 
 // MessageUpdatedEvent disiarkan saat sebuah pesan diedit, supaya perangkat lain
 // mengganti isinya di tempat alih-alih menambah baris baru.

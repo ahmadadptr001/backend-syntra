@@ -7,6 +7,43 @@ pencarian, dan menu — semuanya dalam tema gelap `#121212` dengan font **Ralewa
 
 ---
 
+## 📡 Realtime hapus & reaksi pesan (2026-07-24, ronde 6)
+
+Poin 11.1 & 11.2 di `pesan-untuk-backend.md`: hapus pesan & reaksi belum punya
+siaran WS, jadi perangkat lawan bicara baru tahu setelah buka ulang chat.
+Sekarang keduanya disiarkan ke topik `conversation:<id>`:
+
+| Event | Payload | Aksi di app |
+|---|---|---|
+| `message.deleted` | `{ conversation_id, message_id }` | tandai pesan itu "pesan ini dihapus" seketika |
+| `message.reaction` | `{ conversation_id, message_id, user_id, emoji }` | perbarui reaksi; `emoji` kosong = reaksi dihapus |
+
+Tidak ada perubahan REST — endpoint `DELETE /messages/{id}` dan
+`PUT /messages/{id}/reaction` tetap sama, hanya kini ikut menyiarkan event.
+
+### 🔴 Migrasi tertunda — HARUS dijalankan berurutan
+
+Info dari kalian: migrasi terakhir yang dijalankan di Supabase baru
+**`22_sfu_webhook`**. Berarti berikut ini **belum jalan** — dan endpoint terkait
+(edit pesan, starred, privasi presence, hapus media, plus siaran hapus/reaksi
+baru) akan gagal sampai dijalankan di **Supabase → SQL Editor**, urut:
+
+```
+server/migrations/20260724000023_list_followers.sql
+server/migrations/20260724000024_edit_message.sql
+server/migrations/20260724000025_starred_messages.sql
+server/migrations/20260724000026_presence_privacy.sql
+server/migrations/20260724000027_delete_media.sql
+server/migrations/20260724000028_realtime_delete_reaction.sql
+```
+
+> Khusus migrasi 28: ia mengubah `delete_message` & `react_to_message` agar
+> mengembalikan `conversation_id`. Server yang sudah diperbarui **membutuhkannya**
+> — sampai 28 dijalankan, `DELETE /messages/{id}` dan `PUT .../reaction` akan
+> membalas `404`. Jadi jalankan 28 bersamaan dengan restart server.
+
+---
+
 ## 🗑️ Hapus media — `DELETE /media/{id}` sekarang ADA (2026-07-24, ronde 5)
 
 Poin 5 di `pesan-untuk-backend.md`: "foto lama tetap tertinggal di storage".

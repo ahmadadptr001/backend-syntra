@@ -161,7 +161,7 @@ type Repository interface {
 	MarkRead(ctx context.Context, conversationID, userID, messageID string) error
 	CreateDirect(ctx context.Context, userID, otherID string) (string, error)
 	CreateGroup(ctx context.Context, userID, title string, memberIDs []string) (string, error)
-	DeleteMessage(ctx context.Context, messageID, userID string) error
+	DeleteMessage(ctx context.Context, messageID, userID string) (conversationID string, err error)
 	EditMessage(ctx context.Context, messageID, userID, body string) (conversationID string, editedAt time.Time, err error)
 	StarMessage(ctx context.Context, messageID, userID string) error
 	UnstarMessage(ctx context.Context, messageID, userID string) error
@@ -177,7 +177,7 @@ type Repository interface {
 	UpdateGroup(ctx context.Context, conversationID, userID, title, avatarMediaID string) error
 	SetMemberRole(ctx context.Context, conversationID, userID, memberID, role string) error
 	Mute(ctx context.Context, conversationID, userID string, until *time.Time) error
-	React(ctx context.Context, messageID, userID, emoji string) error
+	React(ctx context.Context, messageID, userID, emoji string) (conversationID string, err error)
 	ListReactions(ctx context.Context, userID string, messageIDs []string) ([]Reaction, error)
 }
 

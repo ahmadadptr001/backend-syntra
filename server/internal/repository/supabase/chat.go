@@ -201,21 +201,31 @@ func (r *ChatRepository) CreateGroup(ctx context.Context, userID, title string, 
 }
 
 // DeleteMessage memanggil fungsi delete_message.
-func (r *ChatRepository) DeleteMessage(ctx context.Context, messageID, userID string) error {
+func (r *ChatRepository) DeleteMessage(ctx context.Context, messageID, userID string) (string, error) {
 	actor, err := actorOption(ctx, userID)
 	if err != nil {
-		return err
+		return "", err
 	}
+	var rows []conversationIDRow
 	if err := r.client.RPC(ctx, "delete_message",
-		map[string]any{"p_message": messageID}, nil, actor); err != nil {
-		return translate(err)
+		map[string]any{"p_message": messageID}, &rows, actor); err != nil {
+		return "", translate(err)
 	}
-	return nil
+	if len(rows) == 0 {
+		return "", chat.ErrNotFound
+	}
+	return rows[0].ConversationID, nil
 }
 
 type editMessageRow struct {
 	ConversationID string    `json:"out_conversation_id"`
 	EditedAt       time.Time `json:"out_edited_at"`
+}
+
+// conversationIDRow memetakan fungsi yang mengembalikan hanya id percakapan
+// (delete_message, react_to_message) — dipakai untuk menargetkan siaran WS.
+type conversationIDRow struct {
+	ConversationID string `json:"out_conversation_id"`
 }
 
 // EditMessage memanggil fungsi edit_message. Mengembalikan percakapan tempat
@@ -588,16 +598,20 @@ func (r *ChatRepository) Mute(ctx context.Context, conversationID, userID string
 	return nil
 }
 
-func (r *ChatRepository) React(ctx context.Context, messageID, userID, emoji string) error {
+func (r *ChatRepository) React(ctx context.Context, messageID, userID, emoji string) (string, error) {
 	actor, err := actorOption(ctx, userID)
 	if err != nil {
-		return err
+		return "", err
 	}
 	args := map[string]any{"p_message": messageID, "p_emoji": nullIfEmpty(emoji)}
-	if err := r.client.RPC(ctx, "react_to_message", args, nil, actor); err != nil {
-		return translate(err)
+	var rows []conversationIDRow
+	if err := r.client.RPC(ctx, "react_to_message", args, &rows, actor); err != nil {
+		return "", translate(err)
 	}
-	return nil
+	if len(rows) == 0 {
+		return "", chat.ErrNotFound
+	}
+	return rows[0].ConversationID, nil
 }
 
 type reactionRow struct {
