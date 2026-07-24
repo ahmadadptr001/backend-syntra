@@ -5,6 +5,8 @@ import (
 	"errors"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/ahmadadptr001/backend-syntra/internal/pkg/topic"
 )
 
 // Profil sendiri, blokir, perangkat, dan laporan — semuanya bertumpu pada
@@ -90,15 +92,39 @@ type UserFinder interface {
 	FindID(ctx context.Context, username string) (string, error)
 }
 
-// ProfileService memuat alur bisnis profil dan sekitarnya.
-type ProfileService struct {
-	store  ProfileStore
-	finder UserFinder
+// Publisher adalah port siaran realtime, sama seperti di domain chat: domain
+// hanya menyatakan "kabarkan kejadian ini ke topik itu", transportnya urusan
+// lapisan luar (internal/transport/ws).
+type Publisher interface {
+	Publish(ctx context.Context, topic, eventType string, payload any) error
 }
 
-// NewProfileService merangkai service.
-func NewProfileService(store ProfileStore, finder UserFinder) *ProfileService {
-	return &ProfileService{store: store, finder: finder}
+// EventUserUpdated disiarkan saat profil berubah, supaya perangkat lain milik
+// pengguna yang sama memperbarui nama/foto tanpa menunggu app dibuka ulang.
+const EventUserUpdated = "user.updated"
+
+// UserUpdatedEvent memuat bidang yang paling sering ditampilkan ulang di layar
+// (nama & foto). Perubahan privasi/username tetap memicu event, tetapi tidak
+// perlu ikut dikirim di sini.
+type UserUpdatedEvent struct {
+	UserID      string `json:"user_id"`
+	DisplayName string `json:"display_name"`
+	AvatarURL   string `json:"avatar_url,omitempty"`
+}
+
+// ProfileService memuat alur bisnis profil dan sekitarnya.
+type ProfileService struct {
+	store     ProfileStore
+	finder    UserFinder
+	pub       Publisher
+	avatarURL func(storageKey string) string
+}
+
+// NewProfileService merangkai service. pub menyiarkan user.updated; avatarURL
+// mengubah storage key jadi URL siap tampil (dari media.Service.PublicURL),
+// supaya perangkat lain tak perlu menyusun URL-nya sendiri.
+func NewProfileService(store ProfileStore, finder UserFinder, pub Publisher, avatarURL func(string) string) *ProfileService {
+	return &ProfileService{store: store, finder: finder, pub: pub, avatarURL: avatarURL}
 }
 
 // Get mengembalikan profil pemanggil.
@@ -138,7 +164,36 @@ func (s *ProfileService) Update(ctx context.Context, in UpdateProfileInput) erro
 		}
 		in.Username = &uname
 	}
-	return s.store.UpdateMyProfile(ctx, in)
+	if err := s.store.UpdateMyProfile(ctx, in); err != nil {
+		return err
+	}
+
+	// Siarkan ke sesi milik pengguna yang sama supaya nama/foto ikut berubah di
+	// perangkat lain secara realtime. Profil dibaca ulang agar nilai yang
+	// dikirim adalah yang otoritatif (mis. avatar diturunkan dari media_id).
+	s.broadcastUpdated(ctx)
+	return nil
+}
+
+// broadcastUpdated membaca profil terbaru lalu menyiarkan user.updated. Best
+// effort: kegagalan siaran tidak menggagalkan penyimpanan yang sudah sukses.
+func (s *ProfileService) broadcastUpdated(ctx context.Context) {
+	if s.pub == nil {
+		return
+	}
+	me, err := s.store.GetMyProfile(ctx)
+	if err != nil {
+		return
+	}
+	url := ""
+	if s.avatarURL != nil {
+		url = s.avatarURL(me.AvatarKey)
+	}
+	_ = s.pub.Publish(ctx, topic.User(me.ID), EventUserUpdated, UserUpdatedEvent{
+		UserID:      me.ID,
+		DisplayName: me.DisplayName,
+		AvatarURL:   url,
+	})
 }
 
 // Block memblokir seseorang berdasarkan username.

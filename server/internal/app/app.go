@@ -114,7 +114,7 @@ func New(ctx context.Context, cfg *config.Config, log *slog.Logger) (*App, error
 	callService := call.NewService(callRepo, sfu, sfu, ws.NewPublisher(hub))
 	reelService := reel.NewService(reelRepo)
 	notifService := notification.NewService(notifRepo, ws.NewPublisher(hub))
-	profileService := account.NewProfileService(profileRepo, profileRepo)
+	profileService := account.NewProfileService(profileRepo, profileRepo, ws.NewPublisher(hub), mediaService.PublicURL)
 
 	// --- transport: websocket ---
 	wsRouter := ws.NewRouter(log)

@@ -969,6 +969,11 @@ diubah. Balasannya profil terbaru (bentuk sama dengan `GET`).
 Ganti foto profil/sampul: unggah lewat alur media §8 → ambil `media_id` →
 `PATCH` dengan `avatar_media_id` / `cover_media_id`.
 
+Event realtime **`user.updated`** disiarkan ke `user:<id>` (topik pribadi, sudah
+dilanggan otomatis) berisi `{ user_id, display_name, avatar_url }`. Gunanya:
+sinkron **antar-perangkat milik pengguna yang sama** — HP kedua/tablet langsung
+memperbarui nama & foto tanpa buka ulang app. `avatar_url` sudah siap tampil.
+
 > **`presence_visible: false`** menyembunyikan status online sepenuhnya: pemilik
 > tak pernah tampak online bagi lawan bicara dan "last seen" tak terekam.
 > Berlaku sejak koneksi WebSocket berikutnya (mis. app dibuka lagi), bukan
@@ -1511,6 +1516,7 @@ diganti dengan yang otoritatif dari server begitu `ack` tiba.
 | `call.answered` | panggilan dijawab salah satu pihak |
 | `call.ended` | panggilan berakhir (`reason`: `declined`/`left`) — tutup layar & putuskan LiveKit |
 | `notification.new` | notifikasi baru untuk kamu (topik `user:<id>`) |
+| `user.updated` | profilmu berubah di perangkat lain (`user:<id>`) — `{user_id,display_name,avatar_url}`, sinkron nama & foto |
 
 Empat event `room.*` di atas disiarkan ke topik `room:<id>`. Bentuk payload dan
 alur lengkapnya ada di [`voice-rooms.md`](voice-rooms.md).

@@ -7,6 +7,67 @@ pencarian, dan menu — semuanya dalam tema gelap `#121212` dengan font **Ralewa
 
 ---
 
+## 🌐 Peta realtime menyeluruh — supaya app "mengerti" (2026-07-24, ronde 7)
+
+Arah proyek: **Syntra realtime end-to-end** — tiap layar ikut berubah sendiri
+tanpa refresh, kecuali hal yang memang tidak masuk akal di-realtime-kan. Bagian
+ini adalah **satu sumber kebenaran** cakupan realtime, biar app tahu persis mana
+yang bisa diandalkan hidup dan mana yang masih perlu tarik-ulang.
+
+### Cara kerja singkat (model langganan)
+
+- Satu koneksi `wss://<host>/api/v1/ws`. Saat connect, app **otomatis** dilanggan
+  ke topik pribadinya `user:<id>` (notifikasi, sinkron antar-perangkat).
+- Topik lain **dilanggan manual** sesuai layar yang terbuka:
+  `conversation:<id>` (chat dibuka), `room:<id>` (voice room), `reel:<id>`
+  (menonton reel — counter like/komentar).
+- Saat reconnect, **tarik ulang** state layar yang terbuka (`GET .../messages`
+  dll.) — Pub/Sub bersifat at-most-once, jadi yang lewat saat putus bisa hilang.
+
+### ✅ Sudah live (andalkan, jangan polling)
+
+| Topik | Event | Untuk |
+|---|---|---|
+| `conversation:<id>` | `message.new` | pesan masuk |
+| `conversation:<id>` | `message.updated` | pesan diedit (ganti di tempat) |
+| `conversation:<id>` | `message.deleted` | pesan dihapus (tandai "dihapus") |
+| `conversation:<id>` | `message.reaction` | reaksi tambah/ganti/hapus |
+| `conversation:<id>` | `typing` | indikator mengetik |
+| `conversation:<id>` | `presence.update` | online/last-seen lawan bicara |
+| `conversation:<id>` | `conversation.updated` | grup berubah (judul/avatar/anggota) |
+| `conversation:<id>` | `call.incoming/answered/ended` | panggilan |
+| `user:<id>` | `message.read` | ✓✓ sinkron antar-perangkat sendiri |
+| `user:<id>` | `notification.new` | notifikasi (lonceng) |
+| `user:<id>` | `user.updated` | **BARU** — nama/foto profil sinkron antar-perangkat sendiri |
+| `room:<id>` | `room.ended/participants/speak_request/role_changed/join_decided/message` | voice room |
+| `reel:<id>` | (counter like/komentar per reel yang ditonton) | interaksi reel |
+
+### 🔜 Menyusul (masih perlu dikerjakan backend — belum live)
+
+Ini yang app **masih boleh polling/refresh** sampai ada kabar "sudah live":
+
+| Event | Untuk | Catatan desain |
+|---|---|---|
+| `story.new` | story row muncul tanpa refresh | fan-out ke follower + lawan chat si pembuat |
+| `room.created` | Voice Hub tahu ada room baru | butuh **topik feed global** `rooms` yang dilanggan saat tab Rooms terbuka |
+| `reel.new` / `reel.deleted` | feed Shorts tahu reel baru/terhapus | butuh **topik feed global** `reels` yang dilanggan saat tab Shorts terbuka |
+
+> Dua topik feed global (`rooms`, `reels`) adalah keputusan arsitektur berikutnya:
+> saat ini topik hanya `user/conversation/room/reel`. Begitu topik global itu
+> ada, `room.created` & `reel.new` langsung menyusul dan polling 8-detik kalian
+> bisa dibuang.
+
+### 🚫 Sengaja TIDAK realtime (jangan tunggu event-nya)
+
+- **Riwayat pesan lama** — ditarik via `GET .../messages` (realtime hanya untuk
+  pesan sejak socket tersambung).
+- **Pencarian** — difilter lokal.
+- **Feed reel lama / daftar room saat pertama buka** — ditarik via `GET` sekali;
+  realtime hanya untuk perubahan sesudahnya.
+- **Chat di dalam voice room** — efemeral, disiarkan lalu hilang; tidak disimpan.
+
+---
+
 ## 📡 Realtime hapus & reaksi pesan (2026-07-24, ronde 6)
 
 Poin 11.1 & 11.2 di `pesan-untuk-backend.md`: hapus pesan & reaksi belum punya
