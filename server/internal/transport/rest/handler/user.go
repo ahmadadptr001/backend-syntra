@@ -40,6 +40,7 @@ type profileDTO struct {
 	Username      string `json:"username"`
 	DisplayName   string `json:"display_name"`
 	AvatarMediaID string `json:"avatar_media_id,omitempty"`
+	AvatarURL     string `json:"avatar_url,omitempty"`
 
 	FollowerCount  int `json:"follower_count"`
 	FollowingCount int `json:"following_count"`
@@ -52,12 +53,14 @@ type profileDTO struct {
 	FollowedAt *time.Time `json:"followed_at,omitempty"`
 }
 
-func toProfileDTO(p user.Profile) profileDTO {
+func (h *User) toProfileDTO(p user.Profile) profileDTO {
 	dto := profileDTO{
 		ID:             p.ID,
 		Username:       p.Username,
 		DisplayName:    p.DisplayName,
-		AvatarMediaID:  p.AvatarMediaID,
+		// AvatarMediaID kini berisi storage_key (lihat migrasi 32); resolve ke
+		// URL siap pakai supaya avatar orang lain tampil, bukan cuma inisial.
+		AvatarURL:      h.media.PublicURL(p.AvatarMediaID),
 		FollowerCount:  p.FollowerCount,
 		FollowingCount: p.FollowingCount,
 		FollowStatus:   string(p.FollowStatus),
@@ -89,7 +92,7 @@ func (h *User) GetByUsername(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	httpx.OK(w, toProfileDTO(profile))
+	httpx.OK(w, h.toProfileDTO(profile))
 }
 
 // Follow menangani POST /api/v1/users/{username}/follow.
@@ -102,7 +105,7 @@ func (h *User) Follow(w http.ResponseWriter, r *http.Request) {
 		writeUserError(w, r, err)
 		return
 	}
-	httpx.OK(w, toProfileDTO(profile))
+	httpx.OK(w, h.toProfileDTO(profile))
 }
 
 // Unfollow menangani DELETE /api/v1/users/{username}/follow. Idempoten.
@@ -112,7 +115,7 @@ func (h *User) Unfollow(w http.ResponseWriter, r *http.Request) {
 		writeUserError(w, r, err)
 		return
 	}
-	httpx.OK(w, toProfileDTO(profile))
+	httpx.OK(w, h.toProfileDTO(profile))
 }
 
 // ListFollowing menangani GET /api/v1/users/me/following.
@@ -129,7 +132,7 @@ func (h *User) ListFollowing(w http.ResponseWriter, r *http.Request) {
 
 	items := make([]profileDTO, 0, len(profiles))
 	for _, p := range profiles {
-		items = append(items, toProfileDTO(p))
+		items = append(items, h.toProfileDTO(p))
 	}
 
 	httpx.Page(w, items, pageMeta{Count: len(items)})
@@ -156,7 +159,7 @@ func (h *User) Search(w http.ResponseWriter, r *http.Request) {
 
 	items := make([]profileDTO, 0, len(profiles))
 	for _, p := range profiles {
-		items = append(items, toProfileDTO(p))
+		items = append(items, h.toProfileDTO(p))
 	}
 
 	httpx.Page(w, items, pageMeta{Count: len(items)})
@@ -181,7 +184,7 @@ func (h *User) writeFollowers(w http.ResponseWriter, r *http.Request, username s
 
 	items := make([]profileDTO, 0, len(profiles))
 	for _, p := range profiles {
-		items = append(items, toProfileDTO(p))
+		items = append(items, h.toProfileDTO(p))
 	}
 	httpx.Page(w, items, pageMeta{Count: len(items)})
 }
@@ -200,7 +203,7 @@ func (h *User) FollowRequests(w http.ResponseWriter, r *http.Request) {
 
 	items := make([]profileDTO, 0, len(profiles))
 	for _, p := range profiles {
-		items = append(items, toProfileDTO(p))
+		items = append(items, h.toProfileDTO(p))
 	}
 	httpx.Page(w, items, pageMeta{Count: len(items)})
 }
