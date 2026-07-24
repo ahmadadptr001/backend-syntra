@@ -29,8 +29,12 @@ param(
     [switch]$Status,
     [switch]$Stop,
     [string]$Hostname,
-    [string]$Name  = "syntra",
-    [string]$Local = "http://localhost:8081"
+    [string]$Name     = "syntra",
+    [string]$Local    = "http://localhost:8081",
+    # QUIC (UDP) sering diblokir/dibatasi di jaringan rumah/seluler dan bikin
+    # koneksi tunnel putus-putus (control stream failure). http2 (TCP) jauh
+    # lebih tahan. Ganti ke "quic" atau "auto" hanya kalau jaringanmu mendukung.
+    [string]$Protocol = "http2"
 )
 
 $ErrorActionPreference = "Stop"
@@ -135,7 +139,7 @@ if ($Run) {
     Get-Process cloudflared -ErrorAction SilentlyContinue | Stop-Process -Force
     Start-Sleep -Milliseconds 300
 
-    Start-Process cloudflared -ArgumentList "tunnel", "run", $Name `
+    Start-Process cloudflared -ArgumentList "tunnel", "run", "--protocol", $Protocol, $Name `
         -WindowStyle Hidden `
         -RedirectStandardOutput $log `
         -RedirectStandardError  "$log.err"
@@ -161,7 +165,7 @@ if ($Quick) {
     Get-Process cloudflared -ErrorAction SilentlyContinue | Stop-Process -Force
     Start-Sleep -Milliseconds 300
 
-    Start-Process cloudflared -ArgumentList "tunnel", "--no-autoupdate", "--url", $Local `
+    Start-Process cloudflared -ArgumentList "tunnel", "--no-autoupdate", "--protocol", $Protocol, "--url", $Local `
         -WindowStyle Hidden -RedirectStandardOutput "$qlog.out" -RedirectStandardError $qlog
 
     Write-Host "Menunggu URL quick tunnel (URL ini ACAK & berubah tiap dijalankan)..." -ForegroundColor Yellow

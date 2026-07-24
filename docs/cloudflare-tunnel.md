@@ -154,6 +154,7 @@ Karena sudah HTTPS/WSS, Android juga tidak perlu izin cleartext traffic lagi.
 | `-Setup` bilang "belum login" | `cert.pem` belum ada | jalankan `cloudflared tunnel login` |
 | DNS route gagal | domain belum **Active** di Cloudflare | tunggu status Active, ulangi `-Setup` |
 | `502`/`error 1033` dari Cloudflare | nginx/Go tidak jalan, atau tunnel mati | pastikan `start.ps1` jalan, lalu `.\tunnel.ps1 -Run` |
+| Tunnel putus-putus, log `control stream failure` / `datagram handler` | QUIC (UDP) diblokir/dibatasi jaringan | sudah dipaksa `--protocol http2` (TCP) di `tunnel.ps1`; kalau masih, coba jaringan lain |
 | WebSocket gagal `403` | origin belum terdaftar | tambahkan `https://api.<domainmu>` ke `WS_ALLOWED_ORIGINS`, restart Go |
 | Alamat lama masih dipakai | build/klien belum diarahkan | ganti base URL aplikasi ke `https://api.<domainmu>` |
 
