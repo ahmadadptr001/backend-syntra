@@ -118,6 +118,10 @@ server/migrations/20260724000028_realtime_delete_reaction.sql
 server/migrations/20260724000029_story_audience.sql
 ```
 
+> **Praktis:** semua di atas sudah digabung ke **satu berkas sekali-jalan** —
+> `server/scripts/apply-pending-migrations.sql`. Tempel seluruh isinya ke
+> Supabase SQL Editor lalu Run. Aman diulang (CREATE OR REPLACE / IF NOT EXISTS).
+
 > Migrasi 29 (`story_audience`) dibutuhkan siaran **`story.new`**. Sampai
 > dijalankan, story tetap tersimpan normal — hanya siaran realtime-nya yang
 > belum jalan (app masih perlu refresh manual untuk melihat story baru).
