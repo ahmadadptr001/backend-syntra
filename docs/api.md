@@ -1045,6 +1045,27 @@ berbeda total dari spam.
 
 ## 7. Direktori pengguna & follow
 
+### `GET /api/v1/users/search?q=<query>&limit=<n>`
+
+**Pencarian & penemuan pengguna** — inilah cara menemukan orang lain tanpa tahu
+username persisnya. Cocokkan `q` ke username **atau** nama tampilan (substring,
+case-insensitive). **`q` kosong = daftar saran** (pengguna terpopuler), supaya
+layar "temukan orang" tak pernah kosong untuk akun baru.
+
+Menyembunyikan: diri sendiri, akun nonaktif, blokir dua arah. `limit` maks 50
+(default 30). Tiap item berbentuk sama dengan `GET /users/{username}`
+(termasuk `follow_status`, jadi tombol Follow/Requested/Following langsung benar).
+
+```
+GET /api/v1/users/search?q=bud        → { "data": [ {username, display_name, avatar_media_id, follow_status, ...}, ... ], "meta": {"count": N} }
+GET /api/v1/users/search              → daftar saran (discovery)
+```
+
+> Ini menutup gejala "tiap pengguna seperti dunia sendiri": tanpa cara mencari
+> orang, akun baru tak bisa membangun following, sehingga story/among tak muncul.
+> Feed Shorts (`GET /reels`) sudah menampilkan **semua reel publik** dari siapa
+> pun — jadi Shorts tidak bergantung pada follow.
+
 ### `GET /api/v1/users/{username}`
 
 Sasaran hasil **scan QR**. Kode QR sebaiknya berisi username

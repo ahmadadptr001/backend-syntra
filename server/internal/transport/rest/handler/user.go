@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/ahmadadptr001/backend-syntra/internal/domain/user"
@@ -14,6 +15,7 @@ import (
 // UserService adalah bagian domain user yang dipakai handler REST.
 type UserService interface {
 	FindByUsername(ctx context.Context, username string) (user.Profile, error)
+	Search(ctx context.Context, query string, limit int) ([]user.Profile, error)
 	Follow(ctx context.Context, username string) (user.Profile, error)
 	Unfollow(ctx context.Context, username string) (user.Profile, error)
 	ListFollowing(ctx context.Context) ([]user.Profile, error)
@@ -120,6 +122,33 @@ func (h *User) Unfollow(w http.ResponseWriter, r *http.Request) {
 // dengan status `accepted`.
 func (h *User) ListFollowing(w http.ResponseWriter, r *http.Request) {
 	profiles, err := h.svc.ListFollowing(r.Context())
+	if err != nil {
+		writeUserError(w, r, err)
+		return
+	}
+
+	items := make([]profileDTO, 0, len(profiles))
+	for _, p := range profiles {
+		items = append(items, toProfileDTO(p))
+	}
+
+	httpx.Page(w, items, pageMeta{Count: len(items)})
+}
+
+// Search menangani GET /api/v1/users/search?q=<query>&limit=<n>.
+//
+// Tanpa q (atau q kosong) mengembalikan saran pengguna — supaya layar
+// temukan-orang tidak pernah kosong bagi akun yang belum mengikuti siapa pun.
+func (h *User) Search(w http.ResponseWriter, r *http.Request) {
+	query := r.URL.Query().Get("q")
+	limit := 0
+	if raw := r.URL.Query().Get("limit"); raw != "" {
+		if n, err := strconv.Atoi(raw); err == nil {
+			limit = n
+		}
+	}
+
+	profiles, err := h.svc.Search(r.Context(), query, limit)
 	if err != nil {
 		writeUserError(w, r, err)
 		return

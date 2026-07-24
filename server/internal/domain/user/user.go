@@ -60,6 +60,7 @@ type Profile struct {
 // Repository adalah port penyimpanan.
 type Repository interface {
 	FindByUsername(ctx context.Context, username string) (Profile, error)
+	SearchUsers(ctx context.Context, query string, limit int) ([]Profile, error)
 	Follow(ctx context.Context, targetID string) (FollowStatus, error)
 	Unfollow(ctx context.Context, targetID string) error
 	ListFollowing(ctx context.Context) ([]Profile, error)
@@ -144,6 +145,16 @@ func (s *Service) Unfollow(ctx context.Context, username string) (Profile, error
 // `accepted` — sebab list_stories menyaring berdasarkan itu.
 func (s *Service) ListFollowing(ctx context.Context) ([]Profile, error) {
 	return s.repo.ListFollowing(ctx)
+}
+
+// Search menemukan pengguna berdasarkan username atau nama tampilan. Query
+// kosong mengembalikan saran (discovery). limit di-clamp di lapisan SQL.
+func (s *Service) Search(ctx context.Context, query string, limit int) ([]Profile, error) {
+	query = strings.TrimSpace(query)
+	if limit <= 0 {
+		limit = 30
+	}
+	return s.repo.SearchUsers(ctx, query, limit)
 }
 
 // ListFollowers mengembalikan pengikut sebuah pengguna.

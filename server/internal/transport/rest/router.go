@@ -164,6 +164,8 @@ func NewRouter(d Deps) http.Handler {
 		protected(http.HandlerFunc(d.Profile.UpdateMe)))
 	mux.Handle("GET /api/v1/users/me/blocked",
 		protected(http.HandlerFunc(d.Profile.ListBlocked)))
+	mux.Handle("GET /api/v1/users/search",
+		protected(http.HandlerFunc(d.User.Search)))
 	mux.Handle("GET /api/v1/users/me/following",
 		protected(http.HandlerFunc(d.User.ListFollowing)))
 	mux.Handle("GET /api/v1/users/me/followers",

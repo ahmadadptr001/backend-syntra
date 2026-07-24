@@ -77,6 +77,36 @@ func (r *UserRepository) FindByUsername(ctx context.Context, username string) (u
 	}, nil
 }
 
+// SearchUsers memanggil fungsi search_users. Query kosong mengembalikan saran
+// (pengguna terpopuler) supaya layar temukan-orang tidak pernah kosong.
+func (r *UserRepository) SearchUsers(ctx context.Context, query string, limit int) ([]user.Profile, error) {
+	actor, err := callerOption(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var rows []profileRow
+	if err := r.client.RPC(ctx, "search_users",
+		map[string]any{"p_query": query, "p_limit": limit}, &rows, actor); err != nil {
+		return nil, translateUser(err)
+	}
+
+	out := make([]user.Profile, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, user.Profile{
+			ID:             row.ID,
+			Username:       row.Username,
+			DisplayName:    row.DisplayName,
+			AvatarMediaID:  deref(row.AvatarMediaID),
+			FollowerCount:  row.FollowerCount,
+			FollowingCount: row.FollowingCount,
+			FollowStatus:   user.FollowStatus(row.FollowStatus),
+			IsSelf:         row.IsSelf,
+		})
+	}
+	return out, nil
+}
+
 // Follow memanggil fungsi follow_user.
 func (r *UserRepository) Follow(ctx context.Context, targetID string) (user.FollowStatus, error) {
 	actor, err := callerOption(ctx)
