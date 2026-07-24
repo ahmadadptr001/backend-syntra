@@ -140,6 +140,8 @@ func NewRouter(d Deps) http.Handler {
 		protected(http.HandlerFunc(d.Profile.ListBlocked)))
 	mux.Handle("GET /api/v1/users/me/following",
 		protected(http.HandlerFunc(d.User.ListFollowing)))
+	mux.Handle("GET /api/v1/users/me/followers",
+		protected(http.HandlerFunc(d.User.ListMyFollowers)))
 	mux.Handle("GET /api/v1/users/me/follow-requests",
 		protected(http.HandlerFunc(d.User.FollowRequests)))
 	mux.Handle("POST /api/v1/users/{username}/follow/approve",
@@ -148,6 +150,8 @@ func NewRouter(d Deps) http.Handler {
 		protected(http.HandlerFunc(d.User.RejectFollow)))
 	mux.Handle("GET /api/v1/users/{username}",
 		protected(http.HandlerFunc(d.User.GetByUsername)))
+	mux.Handle("GET /api/v1/users/{username}/followers",
+		protected(http.HandlerFunc(d.User.ListFollowers)))
 	mux.Handle("POST /api/v1/users/{username}/follow",
 		protected(http.HandlerFunc(d.User.Follow)))
 	mux.Handle("DELETE /api/v1/users/{username}/follow",

@@ -219,6 +219,8 @@ Seluruh baris di tabel ini **diverifikasi jalan** lewat `server/scripts/smoke.ps
 | `DELETE` | `/api/v1/devices/{id}` | ✅ |
 | `POST` | `/api/v1/reports` | ✅ |
 | `GET` | `/api/v1/users/me/following` | ✅ |
+| `GET` | `/api/v1/users/me/followers` | ✅ |
+| `GET` | `/api/v1/users/{username}/followers` | ✅ |
 | `GET` | `/api/v1/users/me/follow-requests` | ✅ |
 | `POST` | `/api/v1/users/{username}/follow/approve` | ✅ |
 | `POST` | `/api/v1/users/{username}/follow/reject` | ✅ |
@@ -1020,6 +1022,17 @@ Daftar orang yang diikuti, urut menurut nama tampil.
     "followed_at": "2026-07-23T09:00:00Z"
 }], "meta": { "count": 1 } }
 ```
+
+### `GET /api/v1/users/me/followers`
+
+Kebalikannya — daftar orang yang **mengikutimu**. Hanya yang berstatus
+`accepted`; permintaan follow yang masih menunggu ada di `follow-requests`.
+Bentuk item sama persis dengan `me/following`.
+
+### `GET /api/v1/users/{username}/followers`
+
+Pengikut pengguna lain (mis. untuk layar profil orang). Bentuknya sama. `404`
+kalau username tidak ada.
 
 ### `GET /api/v1/users/me/follow-requests`
 

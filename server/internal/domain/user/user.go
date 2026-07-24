@@ -63,6 +63,7 @@ type Repository interface {
 	Follow(ctx context.Context, targetID string) (FollowStatus, error)
 	Unfollow(ctx context.Context, targetID string) error
 	ListFollowing(ctx context.Context) ([]Profile, error)
+	ListFollowers(ctx context.Context, username string) ([]Profile, error)
 	ListFollowRequests(ctx context.Context) ([]Profile, error)
 	DecideFollowRequest(ctx context.Context, followerID string, approve bool) error
 }
@@ -143,6 +144,19 @@ func (s *Service) Unfollow(ctx context.Context, username string) (Profile, error
 // `accepted` — sebab list_stories menyaring berdasarkan itu.
 func (s *Service) ListFollowing(ctx context.Context) ([]Profile, error) {
 	return s.repo.ListFollowing(ctx)
+}
+
+// ListFollowers mengembalikan pengikut sebuah pengguna.
+//
+// username kosong berarti pengikut pemanggil sendiri. Hanya yang berstatus
+// `accepted` — permintaan follow yang masih menunggu bukan pengikut.
+func (s *Service) ListFollowers(ctx context.Context, username string) ([]Profile, error) {
+	if username != "" {
+		if _, err := normalize(username); err != nil {
+			return nil, err
+		}
+	}
+	return s.repo.ListFollowers(ctx, username)
 }
 
 // FollowRequests mengembalikan permintaan follow yang menunggu keputusan.

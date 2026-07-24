@@ -132,6 +132,40 @@ func (r *UserRepository) ListFollowing(ctx context.Context) ([]user.Profile, err
 	return out, nil
 }
 
+// ListFollowers memanggil fungsi list_followers.
+//
+// username kosong dibiarkan tanpa argumen supaya fungsi memakai DEFAULT NULL,
+// yang berarti pengikut pemanggil sendiri.
+func (r *UserRepository) ListFollowers(ctx context.Context, username string) ([]user.Profile, error) {
+	actor, err := callerOption(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	args := map[string]any{}
+	if username != "" {
+		args["p_username"] = username
+	}
+
+	var rows []followingRow
+	if err := r.client.RPC(ctx, "list_followers", args, &rows, actor); err != nil {
+		return nil, translateUser(err)
+	}
+
+	out := make([]user.Profile, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, user.Profile{
+			ID:            row.ID,
+			Username:      row.Username,
+			DisplayName:   row.DisplayName,
+			AvatarMediaID: deref(row.AvatarMediaID),
+			FollowStatus:  user.FollowStatus(row.Status),
+			FollowedAt:    row.CreatedAt,
+		})
+	}
+	return out, nil
+}
+
 // ListFollowRequests memanggil fungsi list_follow_requests.
 func (r *UserRepository) ListFollowRequests(ctx context.Context) ([]user.Profile, error) {
 	actor, err := callerOption(ctx)

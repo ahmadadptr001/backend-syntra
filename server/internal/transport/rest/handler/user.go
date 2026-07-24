@@ -17,6 +17,7 @@ type UserService interface {
 	Follow(ctx context.Context, username string) (user.Profile, error)
 	Unfollow(ctx context.Context, username string) (user.Profile, error)
 	ListFollowing(ctx context.Context) ([]user.Profile, error)
+	ListFollowers(ctx context.Context, username string) ([]user.Profile, error)
 	FollowRequests(ctx context.Context) ([]user.Profile, error)
 	DecideFollowRequest(ctx context.Context, username string, approve bool) error
 }
@@ -129,6 +130,30 @@ func (h *User) ListFollowing(w http.ResponseWriter, r *http.Request) {
 		items = append(items, toProfileDTO(p))
 	}
 
+	httpx.Page(w, items, pageMeta{Count: len(items)})
+}
+
+// ListMyFollowers menangani GET /api/v1/users/me/followers.
+func (h *User) ListMyFollowers(w http.ResponseWriter, r *http.Request) {
+	h.writeFollowers(w, r, "")
+}
+
+// ListFollowers menangani GET /api/v1/users/{username}/followers.
+func (h *User) ListFollowers(w http.ResponseWriter, r *http.Request) {
+	h.writeFollowers(w, r, r.PathValue("username"))
+}
+
+func (h *User) writeFollowers(w http.ResponseWriter, r *http.Request, username string) {
+	profiles, err := h.svc.ListFollowers(r.Context(), username)
+	if err != nil {
+		writeUserError(w, r, err)
+		return
+	}
+
+	items := make([]profileDTO, 0, len(profiles))
+	for _, p := range profiles {
+		items = append(items, toProfileDTO(p))
+	}
 	httpx.Page(w, items, pageMeta{Count: len(items)})
 }
 
