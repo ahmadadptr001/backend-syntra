@@ -41,6 +41,7 @@ type reelRow struct {
 	ShareCount      int       `json:"share_count"`
 	Liked           bool      `json:"liked"`
 	Saved           bool      `json:"saved"`
+	IsFollowing     bool      `json:"is_following"`
 	PublishedAt     time.Time `json:"published_at"`
 }
 
@@ -68,6 +69,7 @@ func (row reelRow) toDomain() reel.Reel {
 		ShareCount:      row.ShareCount,
 		Liked:           row.Liked,
 		Saved:           row.Saved,
+		IsFollowing:     row.IsFollowing,
 		PublishedAt:     row.PublishedAt,
 	}
 }

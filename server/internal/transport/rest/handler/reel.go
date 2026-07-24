@@ -62,6 +62,7 @@ type reelDTO struct {
 	ShareCount      int       `json:"share_count"`
 	Liked           bool      `json:"liked"`
 	Saved           bool      `json:"saved"`
+	IsFollowing     bool      `json:"is_following"`
 	PublishedAt     time.Time `json:"published_at"`
 }
 
@@ -93,6 +94,7 @@ func (h *Reel) toReelDTO(r reel.Reel) reelDTO {
 		ShareCount:      r.ShareCount,
 		Liked:           r.Liked,
 		Saved:           r.Saved,
+		IsFollowing:     r.IsFollowing,
 		PublishedAt:     r.PublishedAt,
 	}
 }

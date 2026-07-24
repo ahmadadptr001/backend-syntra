@@ -74,8 +74,9 @@ type Reel struct {
 	ShareCount   int
 
 	// Dari sudut pandang pemanggil, bukan sifat reel itu sendiri.
-	Liked bool
-	Saved bool
+	Liked       bool
+	Saved       bool
+	IsFollowing bool
 
 	PublishedAt time.Time
 }
