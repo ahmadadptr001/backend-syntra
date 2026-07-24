@@ -7,6 +7,32 @@ pencarian, dan menu — semuanya dalam tema gelap `#121212` dengan font **Ralewa
 
 ---
 
+## 🔧 Keandalan panggilan (2026-07-24, ronde 4): webhook LiveKit
+
+**Tidak ada yang perlu kalian ubah** — ini murni perbaikan sisi backend, tapi
+menyelesaikan satu masalah yang pasti kalian temui saat menguji panggilan.
+
+**Masalahnya:** kalau lawan bicara menutup aplikasi paksa, HP-nya mati, atau
+jaringannya putus di tengah panggilan, `POST /calls/{id}/leave` tak pernah
+terkirim. Akibatnya panggilan tersangkut `ongoing` selamanya — banner "sedang
+menelepon" tak pernah hilang, dan `GET /conversations/{id}/call` terus
+mengembalikan panggilan hantu.
+
+**Perbaikannya:** LiveKit sekarang mengabari backend saat peserta benar-benar
+terputus, dan backend menutup panggilannya otomatis lalu menyiarkan
+`call.ended` (reason `disconnected`) ke `conversation:<id>`. Jadi:
+
+- Dengarkan `call.ended` seperti biasa — kini ia juga muncul untuk putus koneksi
+  tak terduga, bukan cuma saat orang menekan tombol "akhiri".
+- Saat menerima `call.ended`, tutup layar panggilan & putuskan LiveKit. Itu
+  cukup; tak perlu polling `GET .../call` untuk memastikan.
+
+Butuh **migrasi `20260724000022_sfu_webhook.sql`** dijalankan pemilik backend,
+plus konfigurasi webhook di dashboard LiveKit. Detail teknis di
+[`api.md`](api.md) — `POST /api/v1/sfu/webhook`.
+
+---
+
 ## 🆕 Gelombang fitur baru (2026-07-24, ronde 3): chat WA-style, panggilan, Shorts
 
 Tiga kelompok fitur besar baru mendarat di backend. **Semuanya butuh migrasi

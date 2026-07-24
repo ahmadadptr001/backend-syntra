@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"time"
 
@@ -19,8 +20,13 @@ type CallService interface {
 	Decline(ctx context.Context, callID, conversationID string) error
 	Leave(ctx context.Context, callID, conversationID string) error
 	Active(ctx context.Context, conversationID string) (*call.Active, error)
+	HandleSFUWebhook(ctx context.Context, authHeader string, body []byte) error
 	SFUReady() bool
 }
+
+// maxWebhookBody membatasi ukuran body webhook. Payload LiveKit kecil (beberapa
+// KB); batas ini mencegah kiriman raksasa menghabiskan memori.
+const maxWebhookBody = 64 << 10
 
 // Call menangani endpoint telepon & video call.
 type Call struct {
@@ -122,6 +128,37 @@ func (h *Call) GetActive(w http.ResponseWriter, r *http.Request) {
 		ID: active.ID, Kind: string(active.Kind), Status: active.Status,
 		InitiatorID: active.InitiatorID, StartedAt: active.StartedAt,
 	})
+}
+
+// Webhook menangani POST /api/v1/sfu/webhook.
+//
+// Endpoint ini PUBLIK — LiveKit Cloud harus bisa menjangkaunya, jadi ia berada
+// di luar middleware auth. Keamanannya bukan JWT pengguna melainkan verifikasi
+// tanda tangan di dalam service: hanya kiriman yang ditandatangani API secret
+// LiveKit yang diproses.
+//
+// Selalu membalas 200 untuk kiriman yang sah walau eventnya diabaikan, supaya
+// LiveKit tidak mengulang-ulang kirim. Hanya tanda tangan tidak sah yang 401.
+func (h *Call) Webhook(w http.ResponseWriter, r *http.Request) {
+	body, err := io.ReadAll(io.LimitReader(r.Body, maxWebhookBody))
+	if err != nil {
+		httpx.Fail(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "gagal membaca body")
+		return
+	}
+
+	err = h.svc.HandleSFUWebhook(r.Context(), r.Header.Get("Authorization"), body)
+	switch {
+	case err == nil:
+		httpx.NoContent(w)
+	case errors.Is(err, call.ErrWebhookAuth):
+		httpx.Fail(w, r, http.StatusUnauthorized, httpx.CodeUnauthorized, "tanda tangan webhook tidak sah")
+	case errors.Is(err, call.ErrNoSFU):
+		// Media server tidak dikonfigurasi — tidak ada yang bisa diverifikasi.
+		httpx.Fail(w, r, http.StatusServiceUnavailable, httpx.CodeInternal, "media server tidak dikonfigurasi")
+	default:
+		middleware.WithError(r, err)
+		httpx.Fail(w, r, http.StatusInternalServerError, httpx.CodeInternal, "terjadi kesalahan internal")
+	}
 }
 
 func toCallSessionDTO(s call.Session) sessionDTOCall {

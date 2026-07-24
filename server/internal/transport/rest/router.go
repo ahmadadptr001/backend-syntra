@@ -58,6 +58,12 @@ func NewRouter(d Deps) http.Handler {
 	mux.HandleFunc("POST /api/v1/auth/refresh", d.Account.Refresh)
 	mux.HandleFunc("POST /api/v1/auth/logout", d.Account.Logout)
 
+	// Webhook LiveKit — dipanggil oleh media server, bukan aplikasi, jadi tidak
+	// ada JWT pengguna. Diamankan dengan verifikasi tanda tangan di handler
+	// (API secret LiveKit), bukan middleware auth. Menutup panggilan yang
+	// ditinggalkan saat perangkat peserta menghilang tanpa lapor.
+	mux.HandleFunc("POST /api/v1/sfu/webhook", d.Call.Webhook)
+
 	// --- REST terproteksi ---
 	protected := middleware.Auth(d.Verifier, middleware.AuthOptions{
 		AllowDebugHeader: d.AllowDebugHeader,

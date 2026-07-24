@@ -116,6 +116,45 @@ func (r *CallRepository) GetActive(ctx context.Context, conversationID string) (
 	}, nil
 }
 
+type sfuResultRow struct {
+	CallID         string `json:"out_call_id"`
+	ConversationID string `json:"out_conversation_id"`
+	Ended          bool   `json:"out_ended"`
+}
+
+// SFUParticipantLeft memanggil fungsi sfu_participant_left.
+//
+// Memakai kunci service: webhook LiveKit tidak membawa JWT pengguna, jadi tidak
+// ada identitas yang bisa dipinjam. Fungsi SQL-nya hanya diberi izin ke
+// service_role, dan pemanggilnya sudah di belakang verifikasi tanda tangan.
+func (r *CallRepository) SFUParticipantLeft(ctx context.Context, sfuRoom, identity string) (*call.SFUResult, error) {
+	return r.sfuClose(ctx, "sfu_participant_left", map[string]any{
+		"p_sfu_room": sfuRoom,
+		"p_identity": identity,
+	})
+}
+
+// SFURoomFinished memanggil fungsi sfu_room_finished.
+func (r *CallRepository) SFURoomFinished(ctx context.Context, sfuRoom string) (*call.SFUResult, error) {
+	return r.sfuClose(ctx, "sfu_room_finished", map[string]any{
+		"p_sfu_room": sfuRoom,
+	})
+}
+
+func (r *CallRepository) sfuClose(ctx context.Context, fn string, args map[string]any) (*call.SFUResult, error) {
+	var rows []sfuResultRow
+	if err := r.client.RPC(ctx, fn, args, &rows, sb.WithServiceRole()); err != nil {
+		return nil, translateCall(err)
+	}
+	if len(rows) == 0 {
+		return nil, nil // tidak ada panggilan aktif untuk room ini
+	}
+	row := rows[0]
+	return &call.SFUResult{
+		CallID: row.CallID, ConversationID: row.ConversationID, Ended: row.Ended,
+	}, nil
+}
+
 func translateCall(err error) error {
 	var apiErr *sb.APIError
 	if !errors.As(err, &apiErr) {

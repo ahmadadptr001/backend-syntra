@@ -20,6 +20,7 @@ var (
 	ErrNotFound     = errors.New("call: panggilan tidak ditemukan")
 	ErrNotAllowed   = errors.New("call: tidak diizinkan")
 	ErrNoSFU        = errors.New("call: media server belum dikonfigurasi")
+	ErrWebhookAuth  = errors.New("call: tanda tangan webhook tidak sah")
 )
 
 // Kind membedakan panggilan suara dan video.
@@ -39,6 +40,20 @@ const (
 	EventAnswered = "call.answered"
 	EventEnded    = "call.ended"
 )
+
+// Nama event webhook LiveKit yang diproses backend. Selain ini diabaikan.
+const (
+	SFUParticipantLeftEvent = "participant_left"
+	SFURoomFinishedEvent    = "room_finished"
+)
+
+// SFUResult adalah hasil memproses satu event webhook: panggilan mana yang
+// tersentuh, di percakapan mana, dan apakah panggilannya berakhir karenanya.
+type SFUResult struct {
+	CallID         string
+	ConversationID string
+	Ended          bool
+}
 
 // Session adalah hasil memulai/menjawab panggilan — bekal menyambung ke SFU.
 type Session struct {
@@ -66,11 +81,30 @@ type Repository interface {
 	Decline(ctx context.Context, callID string) error
 	Leave(ctx context.Context, callID string) error
 	GetActive(ctx context.Context, conversationID string) (*Active, error)
+
+	// Dipicu webhook LiveKit, tanpa JWT pengguna. SFUParticipantLeft menandai
+	// satu peserta keluar; SFURoomFinished menutup seluruh panggilan. Keduanya
+	// mengembalikan nil kalau tidak ada panggilan aktif untuk room itu.
+	SFUParticipantLeft(ctx context.Context, sfuRoom, identity string) (*SFUResult, error)
+	SFURoomFinished(ctx context.Context, sfuRoom string) (*SFUResult, error)
 }
 
 // TokenIssuer menerbitkan kredensial SFU — sama dengan yang dipakai voice room.
 type TokenIssuer interface {
 	Issue(roomID, userID, identity string, canPublish bool) (token, url string, err error)
+	Configured() bool
+}
+
+// WebhookVerifier memverifikasi lalu mengurai kiriman webhook dari SFU.
+//
+// Dipisah dari TokenIssuer meski di produksi keduanya diisi objek yang sama
+// (livekit.Issuer): menerbitkan token dan memverifikasi webhook adalah dua
+// tanggung jawab berbeda, dan memisahkannya membuat keduanya bisa diuji
+// sendiri-sendiri.
+type WebhookVerifier interface {
+	// ParseWebhook mengembalikan (event, sfuRoom, identity). identity kosong
+	// untuk event tingkat-room. Error berarti tanda tangan tidak sah.
+	ParseWebhook(authHeader string, body []byte) (event, sfuRoom, identity string, err error)
 	Configured() bool
 }
 
@@ -83,12 +117,15 @@ type Notifier interface {
 type Service struct {
 	repo     Repository
 	issuer   TokenIssuer
+	webhook  WebhookVerifier
 	notifier Notifier
 }
 
 // NewService merangkai service.
-func NewService(repo Repository, issuer TokenIssuer, notifier Notifier) *Service {
-	return &Service{repo: repo, issuer: issuer, notifier: notifier}
+//
+// issuer dan webhook boleh objek yang sama (livekit.Issuer memenuhi keduanya).
+func NewService(repo Repository, issuer TokenIssuer, webhook WebhookVerifier, notifier Notifier) *Service {
+	return &Service{repo: repo, issuer: issuer, webhook: webhook, notifier: notifier}
 }
 
 // SFUReady menandai apakah media server siap.
@@ -205,6 +242,52 @@ func (s *Service) Active(ctx context.Context, conversationID string) (*Active, e
 		return nil, ErrInvalidInput
 	}
 	return s.repo.GetActive(ctx, conversationID)
+}
+
+// HandleSFUWebhook memproses satu kiriman webhook dari media server.
+//
+// Ini jalur yang menutup panggilan ketika perangkat peserta menghilang tanpa
+// sempat memanggil leave — aplikasi crash, HP mati, jaringan putus. Tanpa ini,
+// baris calls tersangkut 'ongoing' selamanya.
+//
+// authHeader dan body diteruskan mentah dari request supaya verifikasi tanda
+// tangan bekerja atas byte yang persis sama dengan yang dihash LiveKit. Event
+// selain participant_left / room_finished diabaikan diam-diam (dibalas sukses,
+// supaya LiveKit tidak mengulang kirim).
+func (s *Service) HandleSFUWebhook(ctx context.Context, authHeader string, body []byte) error {
+	if s.webhook == nil || !s.webhook.Configured() {
+		return ErrNoSFU
+	}
+
+	event, sfuRoom, identity, err := s.webhook.ParseWebhook(authHeader, body)
+	if err != nil {
+		return ErrWebhookAuth
+	}
+	if sfuRoom == "" {
+		return nil
+	}
+
+	var res *SFUResult
+	switch event {
+	case SFUParticipantLeftEvent:
+		res, err = s.repo.SFUParticipantLeft(ctx, sfuRoom, identity)
+	case SFURoomFinishedEvent:
+		res, err = s.repo.SFURoomFinished(ctx, sfuRoom)
+	default:
+		return nil // event lain tidak relevan bagi siklus hidup panggilan
+	}
+	if err != nil {
+		return err
+	}
+
+	// Kalau panggilan benar-benar berakhir, beri tahu perangkat lawan bicara
+	// supaya UI "sedang menelepon" mereka berhenti sendiri.
+	if res != nil && res.Ended && res.ConversationID != "" {
+		s.notify(ctx, res.ConversationID, EventEnded, map[string]any{
+			"call_id": res.CallID, "reason": "disconnected",
+		})
+	}
+	return nil
 }
 
 func (s *Service) notify(ctx context.Context, conversationID, event string, payload any) {

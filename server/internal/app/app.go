@@ -108,7 +108,9 @@ func New(ctx context.Context, cfg *config.Config, log *slog.Logger) (*App, error
 	mediaService := media.NewService(mediaRepo, mediaStorage, cfg.Supabase.StorageBucket)
 	presenceService := presence.NewService(presenceStore, cfg.WS.PresenceTTL)
 	roomService := room.NewService(roomRepo, sfu, ws.NewPublisher(hub))
-	callService := call.NewService(callRepo, sfu, ws.NewPublisher(hub))
+	// sfu memenuhi TokenIssuer sekaligus WebhookVerifier — objek yang sama
+	// menerbitkan token dan memverifikasi webhook LiveKit.
+	callService := call.NewService(callRepo, sfu, sfu, ws.NewPublisher(hub))
 	reelService := reel.NewService(reelRepo)
 	notifService := notification.NewService(notifRepo, ws.NewPublisher(hub))
 	profileService := account.NewProfileService(profileRepo, profileRepo)

@@ -200,6 +200,7 @@ Seluruh baris di tabel ini **diverifikasi jalan** lewat `server/scripts/smoke.ps
 | `POST` | `/api/v1/calls/{id}/decline` | ✅ |
 | `POST` | `/api/v1/calls/{id}/leave` | ✅ |
 | `GET` | `/api/v1/conversations/{id}/call` | ✅ |
+| `POST` | `/api/v1/sfu/webhook` | ✅ |
 | `GET` | `/api/v1/stories` | ✅ |
 | `POST` | `/api/v1/stories` | ✅ |
 | `GET` | `/api/v1/stories/me` | ✅ |
@@ -677,6 +678,29 @@ Panggilan yang sedang berlangsung pada percakapan — untuk menampilkan tombol
 ```
 
 `data: null` kalau tidak ada panggilan aktif.
+
+### `POST /api/v1/sfu/webhook`
+
+**Bukan endpoint aplikasi** — dipanggil oleh **LiveKit Cloud**, bukan klien.
+Didaftarkan di dashboard LiveKit (Settings → Webhooks) menunjuk ke
+`https://<host>/api/v1/sfu/webhook`.
+
+Gunanya: menutup panggilan yang ditinggalkan tanpa lapor. Setelah token
+diterbitkan, backend tak tahu apa yang terjadi di dalam room; kalau aplikasi
+peserta crash / HP mati / jaringan putus, `leave` tak pernah terkirim dan baris
+`calls` tersangkut `ongoing` selamanya. Webhook memperbaikinya: LiveKit
+mengabari backend saat peserta keluar (`participant_left`) atau room selesai
+(`room_finished`), lalu backend menutup panggilan dan menyiarkan `call.ended`
+(reason `disconnected`) ke `conversation:<id>`.
+
+Autentikasinya **bukan** JWT pengguna melainkan verifikasi tanda tangan: header
+`Authorization` berisi JWT yang ditandatangani API secret LiveKit, memuat hash
+SHA-256 dari body. Kiriman dengan tanda tangan tak sah dibalas `401`; event yang
+tidak relevan tetap dibalas `204` agar LiveKit tidak mengulang kirim.
+
+Prasyarat operasional: `SUPABASE_SERVICE_ROLE_KEY` harus terisi (webhook tak
+punya JWT pengguna, jadi menutup panggilan lewat fungsi khusus service-role),
+dan migrasi `20260724000022_sfu_webhook.sql` sudah dijalankan.
 
 ---
 
