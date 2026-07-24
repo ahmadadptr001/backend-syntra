@@ -23,3 +23,9 @@ deployments/nginx/logs/
 deployments/nginx/temp/
 deployments/nginx/*_temp/
 deployments/nginx/nginx.pid
+
+# cloudflared runtime — config asli & kredensial ada di ~/.cloudflared/ (di luar
+# repo). Ini menutup kalau ada yang tak sengaja ditaruh di dalam repo.
+deployments/cloudflared/config.yml
+deployments/cloudflared/*.json
+*.pem

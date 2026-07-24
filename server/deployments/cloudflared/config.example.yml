@@ -1,0 +1,30 @@
+# Contoh konfigurasi Cloudflare Tunnel untuk Syntra — RUJUKAN saja.
+#
+# Yang asli ditulis otomatis oleh server/tunnel.ps1 ke:
+#     %USERPROFILE%\.cloudflared\config.yml
+# (lokasi default yang dibaca `cloudflared tunnel run`), jadi kamu tidak perlu
+# menyalin berkas ini secara manual. Ia ada di repo hanya supaya bentuk
+# konfigurasinya bisa dibaca tanpa menjalankan apa pun.
+#
+# Kenapa Cloudflare Tunnel: laptop menyambung KELUAR ke Cloudflare, jadi tidak
+# perlu port forwarding di router, tidak perlu membuka Windows Firewall, dan
+# alamatnya TIDAK berubah saat pindah Wi-Fi atau saat IP publik IndiHome
+# berganti. Cloudflare menyediakan HTTPS di depan; trafik ke laptop cukup HTTP
+# lokal ke nginx :8081 — yang sudah menangani upgrade WebSocket, timeout 1 jam,
+# dan rate limiting.
+
+# UUID tunnel dan berkas kredensialnya. Keduanya dibuat oleh
+# `cloudflared tunnel create syntra`; kredensialnya rahasia dan berada di luar
+# repo (di ~/.cloudflared/), jadi tidak pernah ikut ter-commit.
+tunnel: 00000000-0000-0000-0000-000000000000
+credentials-file: C:\Users\user\.cloudflared\00000000-0000-0000-0000-000000000000.json
+
+ingress:
+  # Semua trafik untuk hostname ini diteruskan ke nginx lokal. nginx yang
+  # mengurus /api/v1/ws (WebSocket) dan sisanya — cloudflared meneruskan apa
+  # adanya, termasuk upgrade WebSocket, tanpa konfigurasi tambahan.
+  - hostname: api.contoh.com
+    service: http://localhost:8081
+
+  # Aturan penutup wajib: apa pun yang tidak cocok dibalas 404.
+  - service: http_status:404

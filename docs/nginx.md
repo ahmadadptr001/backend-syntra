@@ -341,6 +341,12 @@ Urutkan pemeriksaannya seperti ini, jangan diacak:
 
 ## 6. Dua batasan yang perlu disadari
 
+> **Kedua batasan di bawah hilang kalau memakai Cloudflare Tunnel** — alamat
+> HTTPS tetap, tanpa port forwarding, kebal IP dinamis. Panduannya di
+> [`cloudflare-tunnel.md`](cloudflare-tunnel.md). Bagian di bawah tetap relevan
+> untuk mode port-forwarding langsung.
+
+
 **Trafiknya HTTP polos, bukan HTTPS.** JWT pengguna melintas dalam bentuk yang
 bisa dibaca siapa pun di jalur jaringan. Untuk demo tertutup masih bisa
 diterima; untuk dipakai orang lain, tidak.
