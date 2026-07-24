@@ -324,9 +324,10 @@ func authorizeTopic(ctx context.Context, c *Client, name string, members Members
 		return nil
 
 	case topic.KindReel:
-		// TODO(fase 2): reel dari akun privat hanya boleh diikuti follower
-		// yang sudah diterima.
-		return errTopicDenied
+		// Kanal satu reel: counter like/komentar realtime. Boleh disimak siapa
+		// pun yang terautentikasi — yang lewat hanya angka & teks komentar
+		// publik, bukan data sensitif. Klien melanggan saat reel tampil.
+		return nil
 
 	case topic.KindRoomsFeed, topic.KindReelsFeed:
 		// Feed global: setiap pengguna terautentikasi boleh menyimak agar tahu

@@ -149,6 +149,13 @@ const (
 	EventReelDeleted = "reel.deleted"
 )
 
+// Event yang disiarkan ke topik satu reel (reel:<id>) — untuk counter like &
+// komentar yang berubah langsung di layar semua penonton reel itu.
+const (
+	EventReelLike    = "reel.like"
+	EventReelComment = "reel.comment"
+)
+
 type Service struct {
 	repo Repository
 	pub  Publisher
@@ -261,14 +268,35 @@ func (s *Service) Delete(ctx context.Context, reelID, userID string) error {
 	return nil
 }
 
-// Like menyukai reel (idempoten).
+// Like menyukai reel (idempoten). Menyiarkan perubahan ke penonton reel.
 func (s *Service) Like(ctx context.Context, reelID, userID string) error {
-	return s.mustIDs(reelID, userID, func() error { return s.repo.Like(ctx, reelID, userID) })
+	if err := s.mustIDs(reelID, userID, func() error { return s.repo.Like(ctx, reelID, userID) }); err != nil {
+		return err
+	}
+	s.broadcastLike(ctx, reelID, userID, true)
+	return nil
 }
 
-// Unlike membatalkan suka.
+// Unlike membatalkan suka. Menyiarkan perubahan ke penonton reel.
 func (s *Service) Unlike(ctx context.Context, reelID, userID string) error {
-	return s.mustIDs(reelID, userID, func() error { return s.repo.Unlike(ctx, reelID, userID) })
+	if err := s.mustIDs(reelID, userID, func() error { return s.repo.Unlike(ctx, reelID, userID) }); err != nil {
+		return err
+	}
+	s.broadcastLike(ctx, reelID, userID, false)
+	return nil
+}
+
+// broadcastLike memberi tahu penonton reel bahwa jumlah like berubah, supaya
+// counter naik/turun langsung di layar semua orang tanpa reload.
+func (s *Service) broadcastLike(ctx context.Context, reelID, userID string, liked bool) {
+	if s.pub == nil {
+		return
+	}
+	_ = s.pub.Publish(ctx, topic.Reel(reelID), EventReelLike, map[string]any{
+		"reel_id": reelID,
+		"user_id": userID,
+		"liked":   liked,
+	})
 }
 
 // Save menyimpan reel ke bookmark.
@@ -304,6 +332,16 @@ func (s *Service) AddComment(ctx context.Context, reelID, userID, body, parentID
 	}
 	if err := s.repo.AddComment(ctx, c); err != nil {
 		return Comment{}, err
+	}
+	// Siarkan supaya jumlah komentar (dan komentar baru) muncul realtime di
+	// layar semua penonton reel.
+	if s.pub != nil {
+		_ = s.pub.Publish(ctx, topic.Reel(reelID), EventReelComment, map[string]any{
+			"reel_id":    reelID,
+			"comment_id": c.ID,
+			"user_id":    userID,
+			"body":       body,
+		})
 	}
 	return c, nil
 }
