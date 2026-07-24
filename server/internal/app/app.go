@@ -105,7 +105,7 @@ func New(ctx context.Context, cfg *config.Config, log *slog.Logger) (*App, error
 	}
 
 	chatService := chat.NewService(chatRepo, ws.NewPublisher(hub), log)
-	storyService := story.NewService(storyRepo)
+	storyService := story.NewService(storyRepo, ws.NewPublisher(hub))
 	userService := user.NewService(userRepo)
 	mediaService := media.NewService(mediaRepo, mediaStorage, cfg.Supabase.StorageBucket)
 	presenceService := presence.NewService(presenceStore, cfg.WS.PresenceTTL, presenceVisibility)

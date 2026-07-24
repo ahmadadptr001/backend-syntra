@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/ahmadadptr001/backend-syntra/internal/pkg/id"
+	"github.com/ahmadadptr001/backend-syntra/internal/pkg/topic"
 )
 
 var (
@@ -125,16 +126,41 @@ type Repository interface {
 	ListViewers(ctx context.Context, storyID, userID string, before ViewerCursor, limit int) ([]Viewer, error)
 	MarkViewed(ctx context.Context, storyID, userID string) error
 	Delete(ctx context.Context, storyID, userID string) error
+
+	// Audience mengembalikan id pengguna yang berhak melihat story penulis ini
+	// (pengikut accepted + lawan chat, minus blokir) — untuk menargetkan siaran
+	// story.new. Himpunannya sama dengan yang akan melihatnya di ListActive.
+	Audience(ctx context.Context, authorID string) ([]string, error)
+}
+
+// Publisher adalah port siaran realtime. Domain hanya menyatakan "kabarkan
+// kejadian ini ke topik itu"; transportnya (WebSocket) urusan lapisan luar.
+type Publisher interface {
+	Publish(ctx context.Context, topic, eventType string, payload any) error
+}
+
+// EventStoryNew disiarkan ke tiap anggota audiens saat story baru dibuat, supaya
+// story row muncul tanpa menunggu refresh.
+const EventStoryNew = "story.new"
+
+// StoryNewEvent memuat penanda minimum. App memakainya sebagai pemicu untuk
+// menyisipkan/menyegarkan baris story lewat GET /stories — yang sudah
+// terkelompok & terurut server-side.
+type StoryNewEvent struct {
+	StoryID   string    `json:"story_id"`
+	AuthorID  string    `json:"author_id"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 // Service memuat alur bisnis story.
 type Service struct {
 	repo Repository
+	pub  Publisher
 }
 
 // NewService merangkai service dengan port yang dibutuhkannya.
-func NewService(repo Repository) *Service {
-	return &Service{repo: repo}
+func NewService(repo Repository, pub Publisher) *Service {
+	return &Service{repo: repo, pub: pub}
 }
 
 // Create menyimpan story baru dari media yang sudah diunggah.
@@ -168,7 +194,27 @@ func (s *Service) Create(ctx context.Context, userID, mediaID string, visibility
 		return Story{}, err
 	}
 
+	s.broadcastNew(ctx, st)
 	return st, nil
+}
+
+// broadcastNew menyiarkan story.new ke audiens penulis, plus sesi penulis
+// sendiri (multi-perangkat). Best effort: kegagalan siaran maupun gagal
+// mengambil audiens tidak menggagalkan story yang sudah tersimpan.
+func (s *Service) broadcastNew(ctx context.Context, st Story) {
+	if s.pub == nil {
+		return
+	}
+	audience, err := s.repo.Audience(ctx, st.AuthorID)
+	if err != nil {
+		return
+	}
+
+	evt := StoryNewEvent{StoryID: st.ID, AuthorID: st.AuthorID, CreatedAt: st.CreatedAt}
+	// Penulis disertakan agar perangkat lain miliknya ikut memperbarui story row.
+	for _, uid := range append(audience, st.AuthorID) {
+		_ = s.pub.Publish(ctx, topic.User(uid), EventStoryNew, evt)
+	}
 }
 
 // ListGrouped mengembalikan story aktif yang boleh dilihat pengguna,

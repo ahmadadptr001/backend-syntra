@@ -206,6 +206,29 @@ func (r *StoryRepository) Delete(ctx context.Context, storyID, userID string) er
 	return nil
 }
 
+// Audience memanggil fungsi story_audience — id pengguna yang berhak melihat
+// story penulis ini, untuk menargetkan siaran story.new.
+func (r *StoryRepository) Audience(ctx context.Context, authorID string) ([]string, error) {
+	actor, err := actorOption(ctx, authorID)
+	if err != nil {
+		return nil, err
+	}
+
+	var rows []struct {
+		UserID string `json:"user_id"`
+	}
+	if err := r.client.RPC(ctx, "story_audience",
+		map[string]any{"p_author": authorID}, &rows, actor); err != nil {
+		return nil, translateStory(err)
+	}
+
+	out := make([]string, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, row.UserID)
+	}
+	return out, nil
+}
+
 // MarkViewed memanggil fungsi mark_story_viewed.
 func (r *StoryRepository) MarkViewed(ctx context.Context, storyID, userID string) error {
 	actor, err := actorOption(ctx, userID)

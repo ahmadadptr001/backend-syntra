@@ -829,6 +829,12 @@ Media harus **sudah diunggah dan dikonfirmasi** lebih dulu (bagian 8).
 `visibility`: `public` | `followers` | `close_friends`. Default `followers`.
 `403` kalau media bukan milik pemanggil.
 
+Event realtime **`story.new`** disiarkan ke topik `user:<id>` tiap orang yang
+berhak melihat (pengikut accepted + lawan chat, minus blokir) — plus perangkat
+lain milik pembuatnya. Payload minimal `{ story_id, author_id, created_at }`;
+pakai sebagai **pemicu** untuk menyisipkan/refresh story row lewat `GET /stories`
+(yang sudah terkelompok & terurut), tak perlu polling.
+
 ### `POST /api/v1/stories/{id}/view`
 
 Menandai sudah ditonton. Balasan `204`. Idempoten — menonton ulang tidak
@@ -1524,6 +1530,7 @@ diganti dengan yang otoritatif dari server begitu `ack` tiba.
 | `call.ended` | panggilan berakhir (`reason`: `declined`/`left`) — tutup layar & putuskan LiveKit |
 | `notification.new` | notifikasi baru untuk kamu (topik `user:<id>`) |
 | `user.updated` | profilmu berubah di perangkat lain (`user:<id>`) — `{user_id,display_name,avatar_url}`, sinkron nama & foto |
+| `story.new` | ada story baru dari orang yang kamu ikuti/ajak chat (`user:<id>`) — `{story_id,author_id,created_at}`, refresh story row |
 
 Empat event `room.*` di atas disiarkan ke topik `room:<id>`. Bentuk payload dan
 alur lengkapnya ada di [`voice-rooms.md`](voice-rooms.md).

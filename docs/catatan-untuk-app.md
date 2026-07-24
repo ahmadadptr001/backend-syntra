@@ -38,7 +38,8 @@ yang bisa diandalkan hidup dan mana yang masih perlu tarik-ulang.
 | `conversation:<id>` | `call.incoming/answered/ended` | panggilan |
 | `user:<id>` | `message.read` | ✓✓ sinkron antar-perangkat sendiri |
 | `user:<id>` | `notification.new` | notifikasi (lonceng) |
-| `user:<id>` | `user.updated` | **BARU** — nama/foto profil sinkron antar-perangkat sendiri |
+| `user:<id>` | `user.updated` | nama/foto profil sinkron antar-perangkat sendiri |
+| `user:<id>` | `story.new` | **BARU** — story baru dari yang di-follow/ajak chat; refresh story row via `GET /stories` |
 | `room:<id>` | `room.ended/participants/speak_request/role_changed/join_decided/message` | voice room |
 | `reel:<id>` | (counter like/komentar per reel yang ditonton) | interaksi reel |
 
@@ -48,7 +49,6 @@ Ini yang app **masih boleh polling/refresh** sampai ada kabar "sudah live":
 
 | Event | Untuk | Catatan desain |
 |---|---|---|
-| `story.new` | story row muncul tanpa refresh | fan-out ke follower + lawan chat si pembuat |
 | `room.created` | Voice Hub tahu ada room baru | butuh **topik feed global** `rooms` yang dilanggan saat tab Rooms terbuka |
 | `reel.new` / `reel.deleted` | feed Shorts tahu reel baru/terhapus | butuh **topik feed global** `reels` yang dilanggan saat tab Shorts terbuka |
 
@@ -96,7 +96,12 @@ server/migrations/20260724000025_starred_messages.sql
 server/migrations/20260724000026_presence_privacy.sql
 server/migrations/20260724000027_delete_media.sql
 server/migrations/20260724000028_realtime_delete_reaction.sql
+server/migrations/20260724000029_story_audience.sql
 ```
+
+> Migrasi 29 (`story_audience`) dibutuhkan siaran **`story.new`**. Sampai
+> dijalankan, story tetap tersimpan normal — hanya siaran realtime-nya yang
+> belum jalan (app masih perlu refresh manual untuk melihat story baru).
 
 > Khusus migrasi 28: ia mengubah `delete_message` & `react_to_message` agar
 > mengembalikan `conversation_id`. Server yang sudah diperbarui **membutuhkannya**
