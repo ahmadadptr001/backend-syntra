@@ -7,6 +7,39 @@ pencarian, dan menu — semuanya dalam tema gelap `#121212` dengan font **Ralewa
 
 ---
 
+## 🗑️ Hapus media — `DELETE /media/{id}` sekarang ADA (2026-07-24, ronde 5)
+
+Poin 5 di `pesan-untuk-backend.md`: "foto lama tetap tertinggal di storage".
+Sudah beres. Endpoint yang kalian **sudah panggil** (`deleteMedia(oldId)`) kini
+bukan no-op lagi:
+
+```
+DELETE /api/v1/media/{id}     → 204   (pemilik saja)
+```
+
+Ia menghapus **baris metadata sekaligus berkasnya** dari object storage. Alur
+ganti avatar yang kalian pakai sudah pas apa adanya — tidak perlu diubah:
+
+```
+upload avatar baru → PATCH /users/me {avatar_media_id: baru} → DELETE /media/{lama}
+```
+
+Yang perlu diketahui saat menyambungkan:
+
+- Panggil `DELETE` **setelah** `PATCH /users/me` menunjuk avatar baru. Kalau id
+  lama masih dipakai (masih jadi avatar, atau terlanjur dikirim sebagai pesan/
+  story/reel), backend menolak dengan **`409 conflict`** alih-alih merusak yang
+  menunjuknya — jadi urutannya penting.
+- `403` = media bukan milikmu. `404` = sudah tidak ada — **perlakukan sebagai
+  sudah bersih**, bukan error yang perlu ditampilkan.
+- Kalau `DELETE` sesekali gagal (jaringan), tidak apa-apa: media yatim tetap
+  dibersihkan otomatis backend setelah masa tenggang.
+
+Butuh **migrasi `20260724000027_delete_media.sql`** dijalankan pemilik backend.
+Kontrak lengkap di [`api.md`](api.md) §8 — `DELETE /api/v1/media/{id}`.
+
+---
+
 ## 🔧 Keandalan panggilan (2026-07-24, ronde 4): webhook LiveKit
 
 **Tidak ada yang perlu kalian ubah** — ini murni perbaikan sisi backend, tapi

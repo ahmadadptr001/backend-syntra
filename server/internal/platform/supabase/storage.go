@@ -53,6 +53,21 @@ func (c *Client) CreateSignedUploadURL(ctx context.Context, bucket, path string,
 	return SignedUpload{URL: full, Token: resp.Token}, nil
 }
 
+// DeleteObject menghapus satu objek dari bucket.
+//
+// Dipakai setelah baris metadata media di database hilang, untuk membuang
+// berkasnya dari object storage. Memakai JWT pengguna (lewat Option), jadi
+// tunduk pada RLS storage.objects — hanya pemilik berkas yang bisa
+// menghapusnya, sejalan dengan penjaga di fungsi delete_media.
+func (c *Client) DeleteObject(ctx context.Context, bucket, path string, opts ...Option) error {
+	if bucket == "" || path == "" {
+		return fmt.Errorf("supabase: bucket dan path wajib diisi")
+	}
+
+	endpoint := fmt.Sprintf("%s/object/%s/%s", pathStorage, bucket, strings.TrimPrefix(path, "/"))
+	return c.do(ctx, http.MethodDelete, endpoint, nil, nil, opts...)
+}
+
 // PublicObjectURL menyusun URL baca untuk objek di bucket publik.
 //
 // Untuk bucket privat, URL ini akan ditolak — yang dibutuhkan adalah signed

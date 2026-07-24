@@ -44,6 +44,31 @@ func (r *MediaRepository) Register(ctx context.Context, a media.Asset) error {
 	return nil
 }
 
+// Delete memanggil fungsi delete_media.
+//
+// Fungsi itu menegakkan kepemilikan dan menolak media yang masih ditunjuk
+// sesuatu; di sini tinggal menerjemahkan galatnya dan membaca storage_key yang
+// dikembalikan supaya berkasnya bisa ikut dibuang.
+func (r *MediaRepository) Delete(ctx context.Context, mediaID, ownerID string) (string, error) {
+	actor, err := actorOption(ctx, ownerID)
+	if err != nil {
+		return "", err
+	}
+
+	var rows []struct {
+		StorageKey string `json:"storage_key"`
+	}
+	if err := r.client.RPC(ctx, "delete_media",
+		map[string]any{"p_id": mediaID}, &rows, actor); err != nil {
+		return "", translateMedia(err)
+	}
+
+	if len(rows) == 0 {
+		return "", media.ErrNotFound
+	}
+	return rows[0].StorageKey, nil
+}
+
 // MediaStorage memenuhi kontrak media.Storage.
 //
 // Terpisah dari MediaRepository karena keduanya memang berbicara ke sistem
@@ -78,16 +103,37 @@ func (s *MediaStorage) PublicURL(bucket, path string) string {
 	return s.client.PublicObjectURL(bucket, path)
 }
 
+// Delete membuang satu objek atas nama pengguna yang sedang login.
+func (s *MediaStorage) Delete(ctx context.Context, bucket, path string) error {
+	actor, err := actorOption(ctx, "")
+	if err != nil {
+		return err
+	}
+
+	if err := s.client.DeleteObject(ctx, bucket, path, actor); err != nil {
+		return translateMedia(err)
+	}
+	return nil
+}
+
 func translateMedia(err error) error {
 	var apiErr *sb.APIError
 	if !errors.As(err, &apiErr) {
 		return err
 	}
 
-	if apiErr.Code == sqlstateInvalidData {
+	switch {
+	case apiErr.Code == sqlstateInUse:
+		return media.ErrInUse
+	case apiErr.Code == sqlstateNotMember, apiErr.IsDeniedByRLS():
+		return media.ErrNotOwner
+	case apiErr.Code == sqlstateNotFound, apiErr.IsNotFound():
+		return media.ErrNotFound
+	case apiErr.Code == sqlstateInvalidData:
 		return media.ErrInvalidInput
+	default:
+		return err
 	}
-	return err
 }
 
 // nullIfZero mengubah 0 menjadi NULL. Dimensi dan durasi bernilai nol berarti

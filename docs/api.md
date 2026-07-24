@@ -250,6 +250,7 @@ Seluruh baris di tabel ini **diverifikasi jalan** lewat `server/scripts/smoke.ps
 | `POST` | `/api/v1/notifications/read` | ✅ |
 | `POST` | `/api/v1/media/upload-url` | ✅ |
 | `POST` | `/api/v1/media/{id}/confirm` | ✅ |
+| `DELETE` | `/api/v1/media/{id}` | ✅ |
 | `GET` | `/api/v1/reels` | ✅ |
 | `POST` | `/api/v1/reels` | ✅ |
 | `GET` | `/api/v1/reels/me` | ✅ |
@@ -1261,6 +1262,39 @@ dibalas `413` (ukuran) atau `400` (durasi):
 
 Klien sebaiknya memeriksa ukuran/durasi **sebelum** mengunggah agar tidak
 membuang kuota jaringan hanya untuk ditolak saat konfirmasi.
+
+### `DELETE /api/v1/media/{id}` — hapus media & berkasnya
+
+Membuang metadata media **dan** berkasnya dari object storage. Dipakai saat
+mengganti foto profil: unggah avatar baru → `PATCH /users/me` menunjuk ke sana →
+`DELETE /media/{id_lama}` untuk membersihkan yang lama. Tanpa ini, foto lama
+tertinggal di storage selamanya.
+
+```
+DELETE /api/v1/media/019f8e70-...     → 204 No Content
+```
+
+Aturan:
+
+- **Hanya pemilik** media yang boleh menghapus. Milik orang lain → `403`.
+- **Media yang masih dipakai ditolak** dengan `409 conflict`: kalau id itu masih
+  jadi avatar/cover profil, avatar percakapan, lampiran pesan, story, atau reel,
+  ia tidak bisa dihapus — menghapusnya akan merusak yang menunjuknya. Panggil
+  `DELETE` ini **setelah** `PATCH /users/me` menunjuk avatar baru, supaya yang
+  lama sudah tidak ditunjuk apa pun.
+- Media yang tidak ada (atau sudah terhapus) → `404`. Aman diperlakukan sebagai
+  "sudah bersih".
+
+| Status | Arti |
+|---|---|
+| `204` | terhapus (baris + berkas) |
+| `403` | bukan milikmu (`forbidden`) |
+| `404` | tidak ditemukan (`not_found`) |
+| `409` | masih dipakai di tempat lain (`conflict`) |
+
+> Media **yatim** yang tidak sempat dihapus manual tetap dibersihkan otomatis
+> oleh backend setelah masa tenggang, jadi kegagalan sesekali di sisi klien
+> tidak menumpuk berkas selamanya.
 
 ---
 

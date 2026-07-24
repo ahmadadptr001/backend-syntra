@@ -37,6 +37,7 @@ const (
 	sqlstateNotFound        = "P0002" // no_data_found
 	sqlstateInvalidData     = "22023" // invalid_parameter_value
 	sqlstateUniqueViolation = "23505" // unique_violation
+	sqlstateInUse           = "55006" // object_in_use
 )
 
 // ChatRepository memenuhi kontrak chat.Repository.

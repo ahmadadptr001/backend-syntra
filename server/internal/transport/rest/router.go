@@ -285,6 +285,8 @@ func NewRouter(d Deps) http.Handler {
 		protected(http.HandlerFunc(d.Media.PrepareUpload)))
 	mux.Handle("POST /api/v1/media/{id}/confirm",
 		protected(http.HandlerFunc(d.Media.Confirm)))
+	mux.Handle("DELETE /api/v1/media/{id}",
+		protected(http.HandlerFunc(d.Media.Delete)))
 
 	// --- WebSocket ---
 	// Memakai middleware auth yang sama, hanya dengan izin tambahan membaca

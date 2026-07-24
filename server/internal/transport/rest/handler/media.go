@@ -15,6 +15,7 @@ import (
 type MediaService interface {
 	PrepareUpload(ctx context.Context, userID string, kind media.Kind, extension string) (media.Upload, error)
 	Confirm(ctx context.Context, a media.Asset) error
+	DeleteAsset(ctx context.Context, mediaID, userID string) error
 	PublicURL(storageKey string) string
 }
 
@@ -134,8 +135,39 @@ func (h *Media) Confirm(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// Delete menangani DELETE /api/v1/media/{id}.
+//
+// Hanya pemiliknya yang boleh, dan hanya kalau media itu tidak lagi ditunjuk
+// apa pun. Aplikasi memanggilnya tiap ganti avatar untuk membuang foto lama —
+// yang sebelumnya tertinggal di storage selamanya. Barisnya dihapus lebih dulu,
+// lalu berkasnya; lihat media.Service.DeleteAsset untuk alasan urutannya.
+func (h *Media) Delete(w http.ResponseWriter, r *http.Request) {
+	mediaID := r.PathValue("id")
+	if mediaID == "" {
+		httpx.Fail(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "id media tidak boleh kosong")
+		return
+	}
+
+	if err := h.svc.DeleteAsset(r.Context(), mediaID, auth.UserID(r.Context())); err != nil {
+		writeMediaError(w, r, err)
+		return
+	}
+
+	httpx.NoContent(w)
+}
+
 func writeMediaError(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
+	case errors.Is(err, media.ErrNotFound):
+		httpx.Fail(w, r, http.StatusNotFound, httpx.CodeNotFound, "media tidak ditemukan")
+
+	case errors.Is(err, media.ErrNotOwner):
+		httpx.Fail(w, r, http.StatusForbidden, httpx.CodeForbidden, "media bukan milik kamu")
+
+	case errors.Is(err, media.ErrInUse):
+		httpx.Fail(w, r, http.StatusConflict, httpx.CodeConflict,
+			"media masih dipakai — lepaskan dulu dari profil/pesan/story sebelum dihapus")
+
 	case errors.Is(err, media.ErrUnknownKind):
 		httpx.Fail(w, r, http.StatusBadRequest, httpx.CodeBadRequest,
 			`kind harus salah satu dari: image, video, audio, voice_note`)

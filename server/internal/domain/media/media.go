@@ -25,6 +25,9 @@ var (
 	ErrUnknownKind  = errors.New("media: jenis media tidak dikenal")
 	ErrTooLarge     = errors.New("media: berkas terlalu besar")
 	ErrTooLong      = errors.New("media: durasi media terlalu panjang")
+	ErrNotFound     = errors.New("media: tidak ditemukan")
+	ErrNotOwner     = errors.New("media: bukan milik pengguna ini")
+	ErrInUse        = errors.New("media: masih dipakai")
 )
 
 // Batas ukuran per jenis. Byte-nya memang tidak masuk Postgres — hanya storage
@@ -104,12 +107,18 @@ type Upload struct {
 // Repository adalah port penyimpanan metadata.
 type Repository interface {
 	Register(ctx context.Context, a Asset) error
+
+	// Delete membuang baris metadata milik pengguna dan mengembalikan
+	// storage_key-nya, supaya berkasnya bisa ikut dibuang. Menolak media milik
+	// orang lain (ErrNotOwner) dan media yang masih ditunjuk sesuatu (ErrInUse).
+	Delete(ctx context.Context, mediaID, ownerID string) (storageKey string, err error)
 }
 
 // Storage adalah port object storage.
 type Storage interface {
 	SignUpload(ctx context.Context, bucket, path string) (url, token string, err error)
 	PublicURL(bucket, path string) string
+	Delete(ctx context.Context, bucket, path string) error
 }
 
 // Service memuat alur bisnis media.
@@ -176,6 +185,29 @@ func (s *Service) Confirm(ctx context.Context, a Asset) error {
 	}
 
 	return s.repo.Register(ctx, a)
+}
+
+// DeleteAsset menghapus media milik pengguna beserta berkasnya.
+//
+// Urutannya disengaja: baris metadata dulu, baru berkasnya. Kalau berkasnya
+// yang lebih dulu dibuang lalu penghapusan baris gagal (misalnya media ternyata
+// masih dipakai), tautan di tempat lain akan menunjuk berkas yang sudah lenyap.
+// Dengan urutan ini, kegagalan sebelum baris hilang tidak merusak apa pun; dan
+// begitu baris hilang, berkasnya memang sudah tidak ditunjuk siapa pun.
+func (s *Service) DeleteAsset(ctx context.Context, mediaID, userID string) error {
+	if mediaID == "" || userID == "" {
+		return ErrInvalidInput
+	}
+
+	key, err := s.repo.Delete(ctx, mediaID, userID)
+	if err != nil {
+		return err
+	}
+
+	if key == "" {
+		return nil
+	}
+	return s.storage.Delete(ctx, s.bucket, key)
 }
 
 // PublicURL menyusun URL baca untuk sebuah storage key.
