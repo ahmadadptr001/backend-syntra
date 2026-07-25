@@ -18,14 +18,19 @@ import (
 
 // Tipe frame dari klien ke server.
 const (
-	TypeSubscribe     = "subscribe"
-	TypeUnsubscribe   = "unsubscribe"
-	TypePing          = "ping"
-	TypeMessageSend   = "message.send"
-	TypeMessageRead   = "message.read"
-	TypeTypingStart   = "typing.start"
-	TypeTypingStop    = "typing.stop"
-	TypePresenceQuery = "presence.query"
+	TypeSubscribe   = "subscribe"
+	TypeUnsubscribe = "unsubscribe"
+	TypePing        = "ping"
+	TypeMessageSend = "message.send"
+	TypeMessageRead = "message.read"
+	// TypeMessageDelivered dikirim penerima saat pesan sampai di perangkatnya
+	// (baik sedang membuka chat maupun hanya di daftar chat) supaya pengirim
+	// bisa menaikkan centang dari 1 (terkirim ke server) menjadi 2 (sampai ke
+	// perangkat lawan). EFEMERAL — tidak pernah disimpan, hanya disiarkan.
+	TypeMessageDelivered = "message.delivered"
+	TypeTypingStart      = "typing.start"
+	TypeTypingStop       = "typing.stop"
+	TypePresenceQuery    = "presence.query"
 
 	// TypeRoomChat adalah pesan teks di dalam voice room.
 	//

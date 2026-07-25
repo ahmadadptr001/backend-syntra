@@ -17,6 +17,7 @@
 
 # logs
 *.log
+logs/
 
 # nginx runtime (dibuat otomatis saat dijalankan)
 deployments/nginx/logs/

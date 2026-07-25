@@ -351,6 +351,11 @@ func (s *Service) Join(ctx context.Context, roomID, userID, identity string) (Jo
 		CanPublish: role.CanPublish(),
 	}
 
+	// Beri tahu peserta yang SUDAH di dalam bahwa ada yang baru masuk. Tanpa ini,
+	// daftar peserta di perangkat mereka basi sampai polling berikutnya — orang
+	// yang baru gabung "belum muncul" di layar teman-temannya.
+	s.notifyParticipants(ctx, roomID)
+
 	// Tanpa SFU terkonfigurasi, keanggotaan tetap tercatat tetapi token kosong.
 	// Klien harus memperlakukan token kosong sebagai "belum ada suara", bukan
 	// mencoba menyambung dengan string kosong.

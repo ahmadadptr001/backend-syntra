@@ -3,6 +3,7 @@ package supabase
 import (
 	"context"
 	"errors"
+	"net/url"
 	"time"
 
 	"github.com/ahmadadptr001/backend-syntra/internal/domain/call"
@@ -47,6 +48,32 @@ func (r *CallRepository) Start(ctx context.Context, callID, conversationID, kind
 		return "", "", false, call.ErrNotFound
 	}
 	return rows[0].CallID, rows[0].SFURoomID, rows[0].IsNew, nil
+}
+
+// ExpireStale mengakhiri SEMUA panggilan yang belum berakhir di sebuah
+// percakapan, langsung lewat PostgREST (service role). Dipakai TEPAT SEBELUM
+// membuat panggilan baru di Start.
+//
+// Tanpa ambang waktu, dan itu memang benar untuk panggilan 1:1: memulai panggilan
+// baru secara definisi membatalkan yang lama. Klien pun mencegah memulai panggilan
+// saat sedang menelepon (guard isBusy), jadi kalau permintaan Start sampai ke sini
+// sementara masih ada baris 'ringing'/'ongoing', baris itu PASTI zombie (aplikasi
+// ter-kill, koneksi putus, dsb). Membiarkannya membuat start_call bergabung diam-
+// diam ke zombie (is_new=false) sehingga call.incoming tak disiarkan dan lawan tak
+// pernah berdering. Best-effort: kegagalan tak menggagalkan panggilan.
+func (r *CallRepository) ExpireStale(ctx context.Context, conversationID string) error {
+	now := time.Now().UTC()
+	body := map[string]any{"status": "ended", "ended_at": now.Format(time.RFC3339)}
+
+	q := url.Values{}
+	q.Set("conversation_id", "eq."+conversationID)
+	q.Set("status", "in.(ringing,ongoing)")
+	q.Set("ended_at", "is.null")
+
+	if err := r.client.Update(ctx, "calls", body, nil, sb.WithServiceRole(), sb.WithQuery(q)); err != nil {
+		return translateCall(err)
+	}
+	return nil
 }
 
 // Answer memanggil fungsi answer_call.

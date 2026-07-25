@@ -67,6 +67,11 @@ type conversationDTO struct {
 	// berarti sudah dibaca. Hanya ada pada percakapan `direct`.
 	CounterpartLastReadID string `json:"counterpart_last_read_id,omitempty"`
 
+	// Pesan terakhir yang sudah SAMPAI di perangkat lawan (✓✓ abu), dibandingkan
+	// sama seperti counterpart_last_read_id. Membuat centang beranda konsisten
+	// dengan di dalam chat: ✓ (belum sampai) / ✓✓ (sampai) / ✓✓ biru (dibaca).
+	CounterpartLastDeliveredID string `json:"counterpart_last_delivered_id,omitempty"`
+
 	UnreadCount     int    `json:"unread_count"`
 	LastMessagePrev string `json:"last_message_preview"`
 	LastMessageType string `json:"last_message_type,omitempty"`
@@ -110,20 +115,21 @@ func (h *Chat) ListConversations(w http.ResponseWriter, r *http.Request) {
 	items := make([]conversationDTO, 0, len(conversations))
 	for _, c := range conversations {
 		items = append(items, conversationDTO{
-			ID:                    c.ID,
-			Type:                  string(c.Type),
-			Title:                 c.Title,
-			AvatarMediaID:         c.AvatarMediaID,
-			CounterpartID:         c.CounterpartID,
-			CounterpartUsername:   c.CounterpartUsername,
-			CounterpartLastReadID: c.CounterpartLastReadID,
-			UnreadCount:           c.UnreadCount,
-			LastMessagePrev:       c.LastMessagePreview,
-			LastMessageType:       string(c.LastMessageType),
-			LastMessageBy:         c.LastMessageSender,
-			LastMessageID:         c.LastMessageID,
-			LastMessageAt:         c.LastMessageAt,
-			CreatedAt:             c.CreatedAt,
+			ID:                         c.ID,
+			Type:                       string(c.Type),
+			Title:                      c.Title,
+			AvatarMediaID:              c.AvatarMediaID,
+			CounterpartID:              c.CounterpartID,
+			CounterpartUsername:        c.CounterpartUsername,
+			CounterpartLastReadID:      c.CounterpartLastReadID,
+			CounterpartLastDeliveredID: c.CounterpartLastDeliveredID,
+			UnreadCount:                c.UnreadCount,
+			LastMessagePrev:            c.LastMessagePreview,
+			LastMessageType:            string(c.LastMessageType),
+			LastMessageBy:              c.LastMessageSender,
+			LastMessageID:              c.LastMessageID,
+			LastMessageAt:              c.LastMessageAt,
+			CreatedAt:                  c.CreatedAt,
 		})
 	}
 

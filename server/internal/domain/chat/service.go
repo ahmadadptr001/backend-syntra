@@ -180,6 +180,18 @@ func (s *Service) SendMessage(ctx context.Context, in SendMessageInput) (Message
 		return Message{}, fmt.Errorf("chat: gagal menyimpan pesan: %w", err)
 	}
 
+	// Resolusikan id media menjadi storage key SEKARANG, supaya baik siaran
+	// message.new maupun respons REST membawa URL lampiran — kalau tidak, foto/
+	// pesan suara muncul sebagai bubble kosong sampai chat dimuat ulang.
+	if len(msg.MediaIDs) > 0 {
+		if keys, err := s.repo.AttachmentKeys(ctx, in.SenderID, msg.MediaIDs); err != nil {
+			s.log.Warn("chat: gagal resolusi lampiran untuk siaran",
+				"error", err, "message_id", msg.ID)
+		} else {
+			msg.AttachmentKeys = keys
+		}
+	}
+
 	// Siaran gagal tidak membatalkan pesan yang sudah tersimpan. Pesannya nyata
 	// dan sudah durabel; klien lain akan mendapatkannya saat sinkronisasi ulang.
 	// Mengembalikan error di sini justru membuat pengirim mengira pesannya gagal
@@ -473,6 +485,40 @@ func (s *Service) MarkRead(ctx context.Context, conversationID, userID, messageI
 	}
 	if err := s.pub.Publish(ctx, topic.Conversation(conversationID), EventMessageRead, event); err != nil {
 		s.log.Warn("chat: gagal menyiarkan status dibaca", "error", err, "user_id", userID)
+	}
+
+	return nil
+}
+
+// MarkDelivered menandai pesan sudah SAMPAI di perangkat userID (✓✓ abu), lalu
+// menyiarkannya supaya pengirim menaikkan centangnya secara realtime. Disimpan
+// (bukan sekadar disiarkan) agar status tetap akurat setelah aplikasi ditutup.
+func (s *Service) MarkDelivered(ctx context.Context, conversationID, userID, messageID string) error {
+	if conversationID == "" || userID == "" || messageID == "" {
+		return ErrInvalidInput
+	}
+
+	member, err := s.repo.IsMember(ctx, conversationID, userID)
+	if err != nil {
+		return fmt.Errorf("chat: gagal memeriksa keanggotaan: %w", err)
+	}
+	if !member {
+		return ErrNotMember
+	}
+
+	if err := s.repo.MarkDelivered(ctx, conversationID, userID, messageID); err != nil {
+		return fmt.Errorf("chat: gagal menandai sampai: %w", err)
+	}
+
+	// UserID = si penerima. Pengirim memakainya untuk menaikkan ✓ menjadi ✓✓
+	// pada pesan miliknya; echo ke perangkat penerima sendiri diabaikan klien.
+	event := DeliveredEvent{
+		ConversationID: conversationID,
+		UserID:         userID,
+		MessageID:      messageID,
+	}
+	if err := s.pub.Publish(ctx, topic.Conversation(conversationID), EventMessageDelivered, event); err != nil {
+		s.log.Warn("chat: gagal menyiarkan status sampai", "error", err, "user_id", userID)
 	}
 
 	return nil

@@ -56,16 +56,17 @@ var _ chat.Repository = (*ChatRepository)(nil)
 // conversationRow memetakan kolom yang dikembalikan fungsi list_conversations.
 // Nama tag JSON harus sama persis dengan nama kolom di RETURNS TABLE.
 type conversationRow struct {
-	ID              string  `json:"id"`
-	Type            string  `json:"type"`
-	Title           string  `json:"title"`
-	AvatarMediaID   *string `json:"avatar_media_id"`
-	CounterpartID   *string `json:"counterpart_id"`
-	CounterpartUser *string `json:"counterpart_username"`
-	CounterpartRead *string `json:"counterpart_last_read"`
-	UnreadCount     int     `json:"unread_count"`
-	LastMessagePrev string  `json:"last_message_preview"`
-	LastMessageType string  `json:"last_message_type"`
+	ID                   string  `json:"id"`
+	Type                 string  `json:"type"`
+	Title                string  `json:"title"`
+	AvatarMediaID        *string `json:"avatar_media_id"`
+	CounterpartID        *string `json:"counterpart_id"`
+	CounterpartUser      *string `json:"counterpart_username"`
+	CounterpartRead      *string `json:"counterpart_last_read"`
+	CounterpartDelivered *string `json:"counterpart_last_delivered"`
+	UnreadCount          int     `json:"unread_count"`
+	LastMessagePrev      string  `json:"last_message_preview"`
+	LastMessageType      string  `json:"last_message_type"`
 
 	// Pointer karena kolom ini NULL pada percakapan yang belum berisi pesan.
 	LastMessageSender *string `json:"last_message_sender"`
@@ -95,20 +96,21 @@ func (r *ChatRepository) ListConversations(ctx context.Context, userID string, l
 	out := make([]chat.Conversation, 0, len(rows))
 	for _, row := range rows {
 		out = append(out, chat.Conversation{
-			ID:                    row.ID,
-			Type:                  chat.ConversationType(row.Type),
-			Title:                 row.Title,
-			AvatarMediaID:         deref(row.AvatarMediaID),
-			CounterpartID:         deref(row.CounterpartID),
-			CounterpartUsername:   deref(row.CounterpartUser),
-			CounterpartLastReadID: deref(row.CounterpartRead),
-			UnreadCount:           row.UnreadCount,
-			LastMessagePreview:    row.LastMessagePrev,
-			LastMessageType:       chat.MessageType(row.LastMessageType),
-			LastMessageSender:     deref(row.LastMessageSender),
-			LastMessageID:         deref(row.LastMessageID),
-			LastMessageAt:         row.LastMessageAt,
-			CreatedAt:             row.CreatedAt,
+			ID:                         row.ID,
+			Type:                       chat.ConversationType(row.Type),
+			Title:                      row.Title,
+			AvatarMediaID:              deref(row.AvatarMediaID),
+			CounterpartID:              deref(row.CounterpartID),
+			CounterpartUsername:        deref(row.CounterpartUser),
+			CounterpartLastReadID:      deref(row.CounterpartRead),
+			CounterpartLastDeliveredID: deref(row.CounterpartDelivered),
+			UnreadCount:                row.UnreadCount,
+			LastMessagePreview:         row.LastMessagePrev,
+			LastMessageType:            chat.MessageType(row.LastMessageType),
+			LastMessageSender:          deref(row.LastMessageSender),
+			LastMessageID:              deref(row.LastMessageID),
+			LastMessageAt:              row.LastMessageAt,
+			CreatedAt:                  row.CreatedAt,
 		})
 	}
 	return out, nil
@@ -439,6 +441,60 @@ func (r *ChatRepository) MarkRead(ctx context.Context, conversationID, userID, m
 	}
 
 	if err := r.client.RPC(ctx, "mark_conversation_read", args, nil, actor); err != nil {
+		return translate(err)
+	}
+	return nil
+}
+
+// AttachmentKeys memetakan id media_assets menjadi storage_key, menjaga urutan
+// sesuai mediaIDs (urutan lampiran penting untuk pesan multi-foto).
+func (r *ChatRepository) AttachmentKeys(ctx context.Context, userID string, mediaIDs []string) ([]string, error) {
+	if len(mediaIDs) == 0 {
+		return nil, nil
+	}
+	actor, err := actorOption(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	query := url.Values{}
+	query.Set("select", "id,storage_key")
+	query.Set("id", "in.("+strings.Join(mediaIDs, ",")+")")
+
+	var rows []struct {
+		ID         string `json:"id"`
+		StorageKey string `json:"storage_key"`
+	}
+	if err := r.client.Select(ctx, "media_assets", &rows, actor, sb.WithQuery(query)); err != nil {
+		return nil, translate(err)
+	}
+
+	byID := make(map[string]string, len(rows))
+	for _, row := range rows {
+		byID[row.ID] = row.StorageKey
+	}
+	keys := make([]string, 0, len(mediaIDs))
+	for _, id := range mediaIDs {
+		if k := byID[id]; k != "" {
+			keys = append(keys, k)
+		}
+	}
+	return keys, nil
+}
+
+// MarkDelivered memanggil mark_conversation_delivered (advance-only).
+func (r *ChatRepository) MarkDelivered(ctx context.Context, conversationID, userID, messageID string) error {
+	actor, err := actorOption(ctx, userID)
+	if err != nil {
+		return err
+	}
+
+	args := map[string]any{
+		"p_conversation": conversationID,
+		"p_message":      messageID,
+	}
+
+	if err := r.client.RPC(ctx, "mark_conversation_delivered", args, nil, actor); err != nil {
 		return translate(err)
 	}
 	return nil

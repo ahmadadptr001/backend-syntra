@@ -77,6 +77,11 @@ type Active struct {
 // Repository adalah port penyimpanan.
 type Repository interface {
 	Start(ctx context.Context, callID, conversationID, kind, sfuRoom string) (id, sfu string, isNew bool, err error)
+	// ExpireStale mengakhiri panggilan zombie di sebuah percakapan (ring tak
+	// dijawab lama / ongoing yang mati karena aplikasi ter-kill sebelum leave).
+	// Best-effort — dipanggil sebelum Start supaya panggilan baru tak bergabung
+	// ke zombie dan benar-benar berdering.
+	ExpireStale(ctx context.Context, conversationID string) error
 	Answer(ctx context.Context, callID string) (sfuRoom string, err error)
 	Decline(ctx context.Context, callID string) error
 	Leave(ctx context.Context, callID string) error
@@ -142,6 +147,14 @@ func (s *Service) Start(ctx context.Context, conversationID, userID, identity st
 	if !kind.Valid() {
 		return Session{}, ErrInvalidInput
 	}
+
+	// Bersihkan panggilan zombie di percakapan ini DULU. Panggilan Syntra selalu
+	// 1:1, jadi kalau seseorang memulai panggilan baru, panggilan lama di situ
+	// pasti sudah mati. Tanpa ini, start_call bergabung ke ring/ongoing zombie
+	// (is_new=false), call.incoming tak disiarkan, dan lawan tak pernah berdering
+	// — persis gejala "muncul sekali lalu tak bisa lagi".
+	// Best-effort: jangan gagalkan panggilan hanya karena pembersihan gagal.
+	_ = s.repo.ExpireStale(ctx, conversationID)
 
 	callID := id.New()
 	// Id SFU dibuat sama dengan id panggilan supaya tidak ada tabel pemetaan.

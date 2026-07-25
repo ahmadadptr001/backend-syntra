@@ -10,6 +10,7 @@ const (
 	EventMessageDeleted      = "message.deleted"
 	EventMessageReaction     = "message.reaction"
 	EventMessageRead         = "message.read"
+	EventMessageDelivered    = "message.delivered"
 	EventTyping              = "typing"
 	EventConversationUpdated = "conversation.updated"
 )
@@ -56,6 +57,15 @@ type MessageEvent struct {
 	// Attachments adalah URL lampiran siap tampil, supaya foto/voice note muncul
 	// realtime tanpa perlu memuat ulang percakapan.
 	Attachments []string `json:"attachments,omitempty"`
+}
+
+// DeliveredEvent memberi tahu PENGIRIM bahwa pesannya sudah sampai di perangkat
+// lawan (✓✓ abu). UserID adalah si penerima, jadi pengirim tahu ini bukan
+// echo-nya sendiri.
+type DeliveredEvent struct {
+	ConversationID string `json:"conversation_id"`
+	UserID         string `json:"user_id"`
+	MessageID      string `json:"message_id"`
 }
 
 // ReadEvent memberi tahu perangkat lain milik pengguna yang sama bahwa

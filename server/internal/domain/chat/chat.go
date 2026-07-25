@@ -80,6 +80,11 @@ type Conversation struct {
 	// Hanya terisi untuk percakapan `direct`.
 	CounterpartLastReadID string
 
+	// CounterpartLastDeliveredID adalah pesan terakhir yang sudah SAMPAI di
+	// perangkat lawan bicara (✓✓ abu), terlepas dari sudah dibaca atau belum.
+	// Dibandingkan seperti CounterpartLastReadID. Hanya untuk `direct`.
+	CounterpartLastDeliveredID string
+
 	UnreadCount int
 
 	LastMessagePreview string
@@ -160,6 +165,10 @@ type Repository interface {
 	IsMember(ctx context.Context, conversationID, userID string) (bool, error)
 	InsertMessage(ctx context.Context, msg Message) error
 	MarkRead(ctx context.Context, conversationID, userID, messageID string) error
+	MarkDelivered(ctx context.Context, conversationID, userID, messageID string) error
+	// AttachmentKeys memetakan id media (yang baru saja dilampirkan) menjadi
+	// storage key-nya, supaya siaran message.new bisa langsung membawa URL.
+	AttachmentKeys(ctx context.Context, userID string, mediaIDs []string) ([]string, error)
 	CreateDirect(ctx context.Context, userID, otherID string) (string, error)
 	CreateGroup(ctx context.Context, userID, title string, memberIDs []string) (string, error)
 	DeleteMessage(ctx context.Context, messageID, userID string) (conversationID string, err error)

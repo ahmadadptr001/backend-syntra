@@ -7,7 +7,7 @@
 #   logs\backend.err.log    stderr server Go (panic, kegagalan fatal)
 #   deployments\nginx\logs\ access.log dan error.log milik nginx
 
-$root  = "C:\Users\user\Documents\PROJECTS\backend-syntra\server"
+$root  = "C:\Users\user\Documents\PROJECTS\syntra\backend-syntra\server"
 $nginx = "$root\deployments\nginx"
 $logs  = "$root\logs"
 

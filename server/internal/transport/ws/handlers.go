@@ -21,6 +21,7 @@ import (
 type ChatService interface {
 	SendMessage(ctx context.Context, in chat.SendMessageInput) (chat.Message, error)
 	MarkRead(ctx context.Context, conversationID, userID, messageID string) error
+	MarkDelivered(ctx context.Context, conversationID, userID, messageID string) error
 }
 
 // MembershipChecker dipakai untuk mengotorisasi langganan topik.
@@ -59,6 +60,7 @@ func RegisterHandlers(r *Router, chatSvc ChatService, members MembershipChecker,
 	r.Handle(protocol.TypeUnsubscribe, handleUnsubscribe)
 	r.Handle(protocol.TypeMessageSend, handleMessageSend(chatSvc))
 	r.Handle(protocol.TypeMessageRead, handleMessageRead(chatSvc))
+	r.Handle(protocol.TypeMessageDelivered, handleMessageDelivered(chatSvc))
 	r.Handle(protocol.TypeTypingStart, handleTyping(true))
 	r.Handle(protocol.TypeTypingStop, handleTyping(false))
 	r.Handle(protocol.TypePresenceQuery, handlePresenceQuery(presenceSvc))
@@ -408,6 +410,31 @@ func handleMessageRead(svc ChatService) HandlerFunc {
 		}
 		c.SendEnvelope(ack)
 		return nil
+	}
+}
+
+type deliveredPayload struct {
+	ConversationID string `json:"conversation_id"`
+	MessageID      string `json:"message_id"`
+}
+
+// handleMessageDelivered mencatat & menyiarkan konfirmasi "sampai di perangkat"
+// (centang dua abu) ke pengirim.
+//
+// Berbeda dari indikator mengetik, ini DISIMPAN (mark_conversation_delivered)
+// supaya status tetap akurat setelah aplikasi ditutup — sama seperti read
+// receipt. Otorisasi & penyiaran ditangani service.MarkDelivered (cek anggota
+// lalu broadcast ke topik percakapan).
+func handleMessageDelivered(svc ChatService) HandlerFunc {
+	return func(ctx context.Context, c *Client, env protocol.Envelope) error {
+		var payload deliveredPayload
+		if err := env.DecodeData(&payload); err != nil {
+			return errBadPayload
+		}
+		if payload.ConversationID == "" || payload.MessageID == "" {
+			return errBadPayload
+		}
+		return svc.MarkDelivered(ctx, payload.ConversationID, c.UserID, payload.MessageID)
 	}
 }
 
