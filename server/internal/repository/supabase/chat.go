@@ -362,11 +362,14 @@ func (r *ChatRepository) IsMember(ctx context.Context, conversationID, userID st
 // mengotorisasi seluruh langganan topik lewat satu interface. Alternatifnya
 // adalah menyuntikkan dua repository ke Hub hanya untuk satu pemeriksaan.
 func (r *ChatRepository) IsRoomParticipant(ctx context.Context, roomID, userID string) (bool, error) {
-	actor, err := actorOption(ctx, userID)
-	if err != nil {
-		return false, err
-	}
-
+	// Service role, bukan JWT pengguna — DISENGAJA. Tabel room_participants
+	// RLS-enabled tetapi tidak punya policy SELECT, jadi query lewat JWT
+	// authenticated selalu default-deny (nol baris) dan pengecekan ini selalu
+	// balik false. Akibatnya otorisasi topik WS room:<id> menolak SEMUA peserta,
+	// sehingga event peserta/peran/berakhir tak pernah sampai dan voice room
+	// hanya ter-update lewat polling ("tidak live"). Ini bukan kebocoran data:
+	// yang dikembalikan hanya boolean keanggotaan untuk gerbang otorisasi, dengan
+	// room_id + user_id yang sudah dipatok (user_id berasal dari JWT WS terverifikasi).
 	query := url.Values{}
 	query.Set("select", "id")
 	query.Set("room_id", "eq."+roomID)
@@ -377,7 +380,7 @@ func (r *ChatRepository) IsRoomParticipant(ctx context.Context, roomID, userID s
 	var rows []struct {
 		ID string `json:"id"`
 	}
-	if err := r.client.Select(ctx, "room_participants", &rows, actor, sb.WithQuery(query)); err != nil {
+	if err := r.client.Select(ctx, "room_participants", &rows, sb.WithServiceRole(), sb.WithQuery(query)); err != nil {
 		return false, translate(err)
 	}
 	return len(rows) > 0, nil

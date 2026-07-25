@@ -243,6 +243,14 @@ func handleSubscribe(members MembershipChecker) HandlerFunc {
 		granted := make([]string, 0, len(payload.Topics))
 		for _, name := range payload.Topics {
 			if err := authorizeTopic(ctx, c, name, members); err != nil {
+				// Satu topik yang ditolak / tak dikenal TIDAK boleh membatalkan
+				// topik lain di frame yang sama — dulu satu langganan buruk
+				// menggagalkan seluruh batch. Lewati yang itu, teruskan sisanya.
+				// Error infrastruktur (mis. cek keanggotaan gagal karena backend)
+				// tetap dilaporkan.
+				if errors.Is(err, errTopicDenied) || errors.Is(err, errTopicUnknown) {
+					continue
+				}
 				return err
 			}
 			granted = append(granted, name)
