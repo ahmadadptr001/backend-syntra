@@ -74,13 +74,14 @@ type reelCursorMeta struct {
 }
 
 func (h *Reel) toReelDTO(r reel.Reel) reelDTO {
-	// author_avatar dari SQL adalah media id, bukan storage key — klien
-	// menyusun URL avatar lewat endpoint profil, jadi di sini dibiarkan kosong.
+	// r.AuthorAvatarID sudah di-resolve repo dari media id menjadi storage_key,
+	// jadi PublicURL menghasilkan URL foto profil penulis (kosong bila tak ada).
 	return reelDTO{
 		ID:              r.ID,
 		AuthorID:        r.AuthorID,
 		AuthorUsername:  r.AuthorUsername,
 		AuthorName:      firstNonEmptyStr(r.AuthorName, r.AuthorUsername),
+		AuthorAvatarURL: h.media.PublicURL(r.AuthorAvatarID),
 		MediaID:         r.MediaID,
 		MediaKind:       r.MediaKind,
 		MediaURL:        h.media.PublicURL(r.StorageKey),
@@ -299,19 +300,23 @@ type reelCommentDTO struct {
 	AuthorID        string    `json:"author_id"`
 	AuthorUsername  string    `json:"author_username"`
 	AuthorName      string    `json:"author_name"`
+	AuthorAvatarURL string    `json:"author_avatar_url,omitempty"`
 	ParentCommentID string    `json:"parent_comment_id,omitempty"`
 	Body            string    `json:"body"`
 	LikeCount       int       `json:"like_count"`
 	CreatedAt       time.Time `json:"created_at"`
 }
 
-func toReelCommentDTO(c reel.Comment) reelCommentDTO {
+// Method (bukan free func) supaya bisa menyusun URL avatar penulis lewat
+// media resolver — c.AuthorAvatarID sudah di-resolve repo menjadi storage_key.
+func (h *Reel) toReelCommentDTO(c reel.Comment) reelCommentDTO {
 	return reelCommentDTO{
 		ID:              c.ID,
 		ReelID:          c.ReelID,
 		AuthorID:        c.AuthorID,
 		AuthorUsername:  c.AuthorUsername,
 		AuthorName:      firstNonEmptyStr(c.AuthorName, c.AuthorUsername),
+		AuthorAvatarURL: h.media.PublicURL(c.AuthorAvatarID),
 		ParentCommentID: c.ParentCommentID,
 		Body:            c.Body,
 		LikeCount:       c.LikeCount,
@@ -336,7 +341,7 @@ func (h *Reel) AddComment(w http.ResponseWriter, r *http.Request) {
 		writeReelError(w, r, err)
 		return
 	}
-	httpx.Created(w, toReelCommentDTO(c))
+	httpx.Created(w, h.toReelCommentDTO(c))
 }
 
 type reelCommentPageMeta struct {
@@ -359,7 +364,7 @@ func (h *Reel) ListComments(w http.ResponseWriter, r *http.Request) {
 	}
 	dtos := make([]reelCommentDTO, 0, len(items))
 	for _, c := range items {
-		dtos = append(dtos, toReelCommentDTO(c))
+		dtos = append(dtos, h.toReelCommentDTO(c))
 	}
 	meta := reelCommentPageMeta{Count: len(dtos)}
 	if n := len(items); n > 0 {

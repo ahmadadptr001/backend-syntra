@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/ahmadadptr001/backend-syntra/internal/domain/reel"
@@ -75,6 +76,60 @@ func (row reelRow) toDomain() reel.Reel {
 	}
 }
 
+// avatarKeys menerjemahkan id media avatar menjadi storage_key dalam satu query.
+//
+// Fungsi feed reel (dan komentar) mengembalikan avatar penulis sebagai id media
+// (uuid), bukan storage_key — sehingga backend tak bisa menyusun URL dan avatar
+// jatuh ke inisial. media_assets bisa dibaca semua pengguna terautentikasi
+// (policy media_select USING true), jadi token pemanggil cukup. Id yang tak
+// ditemukan sekadar absen dari peta. Best effort: kegagalan → peta kosong.
+func (r *ReelRepository) avatarKeys(ctx context.Context, userID string, ids []string) map[string]string {
+	out := map[string]string{}
+	seen := map[string]bool{}
+	uniq := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if id != "" && !seen[id] {
+			seen[id] = true
+			uniq = append(uniq, id)
+		}
+	}
+	if len(uniq) == 0 {
+		return out
+	}
+	actor, err := actorOption(ctx, userID)
+	if err != nil {
+		return out
+	}
+	q := url.Values{}
+	q.Set("select", "id,storage_key")
+	q.Set("id", "in.("+strings.Join(uniq, ",")+")")
+	var rows []struct {
+		ID         string `json:"id"`
+		StorageKey string `json:"storage_key"`
+	}
+	if err := r.client.Select(ctx, "media_assets", &rows, actor, sb.WithQuery(q)); err != nil {
+		return out
+	}
+	for _, row := range rows {
+		out[row.ID] = row.StorageKey
+	}
+	return out
+}
+
+// hydrateReelAvatars mengganti AuthorAvatarID tiap reel (semula id media) dengan
+// storage_key-nya, supaya handler bisa memanggil PublicURL. Reel tanpa avatar
+// menjadi string kosong.
+func (r *ReelRepository) hydrateReelAvatars(ctx context.Context, userID string, reels []reel.Reel) {
+	ids := make([]string, 0, len(reels))
+	for _, rl := range reels {
+		ids = append(ids, rl.AuthorAvatarID)
+	}
+	keys := r.avatarKeys(ctx, userID, ids)
+	for i := range reels {
+		reels[i].AuthorAvatarID = keys[reels[i].AuthorAvatarID]
+	}
+}
+
 func cursorArgs(before reel.Cursor) (any, any) {
 	if before.IsZero() {
 		return nil, nil
@@ -114,7 +169,9 @@ func (r *ReelRepository) Feed(ctx context.Context, userID string, before reel.Cu
 		map[string]any{"p_limit": limit, "p_before_at": at, "p_before_id": id}, &rows, actor); err != nil {
 		return nil, translateReel(err)
 	}
-	return reelsToDomain(rows), nil
+	out := reelsToDomain(rows)
+	r.hydrateReelAvatars(ctx, userID, out)
+	return out, nil
 }
 
 // Get memanggil get_reel.
@@ -130,7 +187,9 @@ func (r *ReelRepository) Get(ctx context.Context, reelID, userID string) (reel.R
 	if len(rows) == 0 {
 		return reel.Reel{}, reel.ErrNotFound
 	}
-	return rows[0].toDomain(), nil
+	out := []reel.Reel{rows[0].toDomain()}
+	r.hydrateReelAvatars(ctx, userID, out)
+	return out[0], nil
 }
 
 // Mine memanggil list_my_reels.
@@ -145,7 +204,9 @@ func (r *ReelRepository) Mine(ctx context.Context, userID string, before reel.Cu
 		map[string]any{"p_limit": limit, "p_before_at": at, "p_before_id": id}, &rows, actor); err != nil {
 		return nil, translateReel(err)
 	}
-	return reelsToDomain(rows), nil
+	out := reelsToDomain(rows)
+	r.hydrateReelAvatars(ctx, userID, out)
+	return out, nil
 }
 
 // ListByUser memanggil list_user_reels.
@@ -160,7 +221,9 @@ func (r *ReelRepository) ListByUser(ctx context.Context, username, userID string
 		map[string]any{"p_username": username, "p_limit": limit, "p_before_at": at, "p_before_id": id}, &rows, actor); err != nil {
 		return nil, translateReel(err)
 	}
-	return reelsToDomain(rows), nil
+	out := reelsToDomain(rows)
+	r.hydrateReelAvatars(ctx, userID, out)
+	return out, nil
 }
 
 // ListSaved memanggil list_saved_reels.
@@ -175,7 +238,9 @@ func (r *ReelRepository) ListSaved(ctx context.Context, userID string, before re
 		map[string]any{"p_limit": limit, "p_before_at": at, "p_before_id": id}, &rows, actor); err != nil {
 		return nil, translateReel(err)
 	}
-	return reelsToDomain(rows), nil
+	out := reelsToDomain(rows)
+	r.hydrateReelAvatars(ctx, userID, out)
+	return out, nil
 }
 
 // Delete memanggil delete_reel.
@@ -287,6 +352,16 @@ func (r *ReelRepository) ListComments(ctx context.Context, reelID, userID string
 			LikeCount:       row.LikeCount,
 			CreatedAt:       row.CreatedAt,
 		})
+	}
+	// Resolve avatar media ids → storage keys (sama seperti reel), supaya handler
+	// bisa menyusun URL foto profil penulis komentar.
+	ids := make([]string, 0, len(out))
+	for _, c := range out {
+		ids = append(ids, c.AuthorAvatarID)
+	}
+	keys := r.avatarKeys(ctx, userID, ids)
+	for i := range out {
+		out[i].AuthorAvatarID = keys[out[i].AuthorAvatarID]
 	}
 	return out, nil
 }
