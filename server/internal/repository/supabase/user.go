@@ -27,6 +27,7 @@ type profileRow struct {
 	Username       string  `json:"username"`
 	DisplayName    string  `json:"display_name"`
 	AvatarMediaID  *string `json:"avatar_media_id"`
+	CoverMediaID   *string `json:"cover_media_id"`
 	FollowerCount  int     `json:"follower_count"`
 	FollowingCount int     `json:"following_count"`
 	FollowStatus   string  `json:"follow_status"`
@@ -70,6 +71,7 @@ func (r *UserRepository) FindByUsername(ctx context.Context, username string) (u
 		Username:       row.Username,
 		DisplayName:    row.DisplayName,
 		AvatarMediaID:  deref(row.AvatarMediaID),
+		CoverMediaID:   deref(row.CoverMediaID),
 		FollowerCount:  row.FollowerCount,
 		FollowingCount: row.FollowingCount,
 		FollowStatus:   user.FollowStatus(row.FollowStatus),
@@ -264,4 +266,51 @@ func translateUser(err error) error {
 	default:
 		return err
 	}
+}
+
+// RecordVisit memanggil record_profile_visit.
+func (r *UserRepository) RecordVisit(ctx context.Context, profileID string) error {
+	actor, err := callerOption(ctx)
+	if err != nil {
+		return err
+	}
+	if err := r.client.RPC(ctx, "record_profile_visit",
+		map[string]any{"p_profile": profileID}, nil, actor); err != nil {
+		return translateUser(err)
+	}
+	return nil
+}
+
+type visitorRow struct {
+	VisitorID   string    `json:"visitor_id"`
+	Username    string    `json:"username"`
+	DisplayName string    `json:"display_name"`
+	AvatarKey   string    `json:"avatar_key"`
+	VisitedAt   time.Time `json:"visited_at"`
+	TotalCount  int       `json:"total_count"`
+}
+
+// ListVisitors memanggil list_profile_visitors.
+func (r *UserRepository) ListVisitors(ctx context.Context, limit int) ([]user.Visitor, error) {
+	actor, err := callerOption(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var rows []visitorRow
+	if err := r.client.RPC(ctx, "list_profile_visitors",
+		map[string]any{"p_limit": limit}, &rows, actor); err != nil {
+		return nil, translateUser(err)
+	}
+	out := make([]user.Visitor, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, user.Visitor{
+			UserID:      row.VisitorID,
+			Username:    row.Username,
+			DisplayName: row.DisplayName,
+			AvatarKey:   row.AvatarKey,
+			VisitedAt:   row.VisitedAt,
+			Total:       row.TotalCount,
+		})
+	}
+	return out, nil
 }

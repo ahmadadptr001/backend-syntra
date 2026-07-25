@@ -81,7 +81,10 @@ type Room struct {
 	HostID       string
 	HostUsername string
 	HostName     string
+	// HostAvatarID kini berisi storage_key (bukan id media) supaya bisa langsung
+	// di-resolve jadi URL. HostCoverID adalah storage_key background/cover host.
 	HostAvatarID string
+	HostCoverID  string
 
 	Title      string
 	Topic      string
@@ -105,6 +108,9 @@ type Participant struct {
 	// mengubah id menjadi URL — ia tidak tahu path-nya — sehingga avatar
 	// peserta tidak bisa dirender sama sekali kalau hanya id yang dikirim.
 	AvatarKey string
+	// CoverKey adalah storage_key background/cover profil peserta — dipakai app
+	// sebagai latar ubin saat kamera peserta mati.
+	CoverKey string
 
 	Role          Role
 	IsMuted       bool

@@ -90,6 +90,12 @@ type Comment struct {
 	AuthorName      string
 	AuthorAvatarID  string
 	ParentCommentID string
+	// ReplyToID menunjuk komentar PERSIS yang dibalas (bisa sebuah balasan di
+	// dalam thread), berbeda dari ParentCommentID yang selalu komentar puncak.
+	// Dua kolom di bawah hanya untuk tampilan kutipan (diisi saat list).
+	ReplyToID       string
+	ReplyToUsername string
+	ReplyToBody     string
 	Body            string
 	LikeCount       int
 	CreatedAt       time.Time
@@ -328,7 +334,7 @@ func (s *Service) RecordView(ctx context.Context, reelID, userID string) error {
 }
 
 // AddComment menambah komentar pada reel.
-func (s *Service) AddComment(ctx context.Context, reelID, userID, body, parentID string) (Comment, error) {
+func (s *Service) AddComment(ctx context.Context, reelID, userID, body, parentID, replyToID string) (Comment, error) {
 	if reelID == "" || userID == "" {
 		return Comment{}, ErrInvalidInput
 	}
@@ -340,6 +346,7 @@ func (s *Service) AddComment(ctx context.Context, reelID, userID, body, parentID
 		ReelID:          reelID,
 		AuthorID:        userID,
 		ParentCommentID: parentID,
+		ReplyToID:       replyToID,
 		Body:            body,
 		CreatedAt:       time.Now().UTC(),
 	}
@@ -360,8 +367,14 @@ func (s *Service) AddComment(ctx context.Context, reelID, userID, body, parentID
 	// Kalau ini balasan, beri tahu penulis komentar induk. Best effort: kegagalan
 	// tidak menggagalkan komentar yang sudah tersimpan. Penerima=diri sendiri
 	// disaring di lapisan notifikasi (database).
-	if parentID != "" && s.notifier != nil {
-		if author, err := s.repo.CommentAuthor(ctx, parentID); err == nil && author != "" {
+	// Beri tahu orang yang PERSIS dibalas (komentar spesifik di dalam thread),
+	// bukan sekadar pemilik komentar puncak; jatuh kembali ke parent bila tak ada.
+	notifyTarget := replyToID
+	if notifyTarget == "" {
+		notifyTarget = parentID
+	}
+	if notifyTarget != "" && s.notifier != nil {
+		if author, err := s.repo.CommentAuthor(ctx, notifyTarget); err == nil && author != "" {
 			// userID = pelaku (yang membalas); author = penerima (pemilik komentar).
 			_ = s.notifier.NotifyCommentReply(ctx, author, userID, reelID)
 		}

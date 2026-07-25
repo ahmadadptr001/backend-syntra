@@ -27,7 +27,7 @@ type ReelService interface {
 	Save(ctx context.Context, reelID, userID string) error
 	Unsave(ctx context.Context, reelID, userID string) error
 	RecordView(ctx context.Context, reelID, userID string) error
-	AddComment(ctx context.Context, reelID, userID, body, parentID string) (reel.Comment, error)
+	AddComment(ctx context.Context, reelID, userID, body, parentID, replyToID string) (reel.Comment, error)
 	ListComments(ctx context.Context, reelID, userID string, before reel.Cursor, limit int) ([]reel.Comment, error)
 	DeleteComment(ctx context.Context, commentID, userID string) error
 }
@@ -302,6 +302,10 @@ type reelCommentDTO struct {
 	AuthorName      string    `json:"author_name"`
 	AuthorAvatarURL string    `json:"author_avatar_url,omitempty"`
 	ParentCommentID string    `json:"parent_comment_id,omitempty"`
+	// Kutipan komentar yang PERSIS dibalas (untuk ditampilkan di dalam balasan).
+	ReplyToID       string    `json:"reply_to_comment_id,omitempty"`
+	ReplyToUsername string    `json:"reply_to_username,omitempty"`
+	ReplyToBody     string    `json:"reply_to_body,omitempty"`
 	Body            string    `json:"body"`
 	LikeCount       int       `json:"like_count"`
 	CreatedAt       time.Time `json:"created_at"`
@@ -318,6 +322,9 @@ func (h *Reel) toReelCommentDTO(c reel.Comment) reelCommentDTO {
 		AuthorName:      firstNonEmptyStr(c.AuthorName, c.AuthorUsername),
 		AuthorAvatarURL: h.media.PublicURL(c.AuthorAvatarID),
 		ParentCommentID: c.ParentCommentID,
+		ReplyToID:       c.ReplyToID,
+		ReplyToUsername: c.ReplyToUsername,
+		ReplyToBody:     c.ReplyToBody,
 		Body:            c.Body,
 		LikeCount:       c.LikeCount,
 		CreatedAt:       c.CreatedAt,
@@ -327,6 +334,8 @@ func (h *Reel) toReelCommentDTO(c reel.Comment) reelCommentDTO {
 type addCommentRequest struct {
 	Body     string `json:"body"`
 	ParentID string `json:"parent_id"`
+	// ReplyToID: komentar spesifik yang dibalas (opsional, untuk kutipan).
+	ReplyToID string `json:"reply_to_id"`
 }
 
 // AddComment menangani POST /api/v1/reels/{id}/comments.
@@ -336,7 +345,7 @@ func (h *Reel) AddComment(w http.ResponseWriter, r *http.Request) {
 		httpx.Fail(w, r, http.StatusBadRequest, httpx.CodeBadRequest, err.Error())
 		return
 	}
-	c, err := h.svc.AddComment(r.Context(), r.PathValue("id"), auth.UserID(r.Context()), req.Body, req.ParentID)
+	c, err := h.svc.AddComment(r.Context(), r.PathValue("id"), auth.UserID(r.Context()), req.Body, req.ParentID, req.ReplyToID)
 	if err != nil {
 		writeReelError(w, r, err)
 		return

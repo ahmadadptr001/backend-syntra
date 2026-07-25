@@ -48,7 +48,10 @@ type roomDTO struct {
 	HostID       string `json:"host_id"`
 	HostUsername string `json:"host_username,omitempty"`
 	HostName     string `json:"host_name,omitempty"`
-	HostAvatarID string `json:"host_avatar_media_id,omitempty"`
+	// URL siap pakai. HostCoverURL adalah background/cover profil host, dipakai
+	// app sebagai latar kartu room.
+	HostAvatarURL string `json:"host_avatar_url,omitempty"`
+	HostCoverURL  string `json:"host_cover_url,omitempty"`
 
 	Title      string `json:"title"`
 	Topic      string `json:"topic,omitempty"`
@@ -61,13 +64,14 @@ type roomDTO struct {
 	StartedAt time.Time `json:"started_at"`
 }
 
-func toRoomDTO(r room.Room) roomDTO {
+func (h *Room) toRoomDTO(r room.Room) roomDTO {
 	return roomDTO{
 		ID:               r.ID,
 		HostID:           r.HostID,
 		HostUsername:     r.HostUsername,
 		HostName:         r.HostName,
-		HostAvatarID:     r.HostAvatarID,
+		HostAvatarURL:    h.media.PublicURL(r.HostAvatarID),
+		HostCoverURL:     h.media.PublicURL(r.HostCoverID),
 		Title:            r.Title,
 		Topic:            r.Topic,
 		Visibility:       string(r.Visibility),
@@ -88,7 +92,7 @@ func (h *Room) List(w http.ResponseWriter, r *http.Request) {
 
 	items := make([]roomDTO, 0, len(rooms))
 	for _, rm := range rooms {
-		items = append(items, toRoomDTO(rm))
+		items = append(items, h.toRoomDTO(rm))
 	}
 
 	// sfu_ready memberi tahu klien lebih awal bahwa room bisa dibuat dan
@@ -140,7 +144,7 @@ func (h *Room) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	httpx.Created(w, createdRoomDTO{
-		roomDTO: toRoomDTO(created),
+		roomDTO: h.toRoomDTO(created),
 		Join: joinDTO{
 			RoomID:     joined.RoomID,
 			Status:     string(joined.Status),
@@ -294,6 +298,8 @@ type participantDTO struct {
 	// URL siap pakai, bukan id media. Klien tidak punya cara mengubah id
 	// menjadi URL, jadi mengirim id saja membuat avatar mustahil dirender.
 	AvatarURL string `json:"avatar_url,omitempty"`
+	// CoverURL adalah background/cover profil peserta — latar ubin saat kamera mati.
+	CoverURL string `json:"cover_url,omitempty"`
 
 	Role          string    `json:"role"`
 	IsMuted       bool      `json:"is_muted"`
@@ -369,6 +375,7 @@ func (h *Room) Participants(w http.ResponseWriter, r *http.Request) {
 			Username:      p.Username,
 			DisplayName:   p.DisplayName,
 			AvatarURL:     h.media.PublicURL(p.AvatarKey),
+			CoverURL:      h.media.PublicURL(p.CoverKey),
 			Role:          string(p.Role),
 			IsMuted:       p.IsMuted,
 			HasRaisedHand: p.HasRaisedHand,

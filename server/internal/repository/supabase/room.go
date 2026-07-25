@@ -30,6 +30,7 @@ type roomRow struct {
 	HostUsername     string    `json:"host_username"`
 	HostName         string    `json:"host_name"`
 	HostAvatar       *string   `json:"host_avatar"`
+	HostCover        *string   `json:"host_cover"`
 	Title            string    `json:"title"`
 	Topic            string    `json:"topic"`
 	Visibility       string    `json:"visibility"`
@@ -50,6 +51,7 @@ type participantRow struct {
 	Username      string    `json:"username"`
 	DisplayName   string    `json:"display_name"`
 	AvatarKey     string    `json:"avatar_key"`
+	CoverKey      string    `json:"cover_key"`
 	Role          string    `json:"role"`
 	IsMuted       bool      `json:"is_muted"`
 	HasRaisedHand bool      `json:"has_raised_hand"`
@@ -105,6 +107,7 @@ func (r *RoomRepository) List(ctx context.Context) ([]room.Room, error) {
 			HostUsername:     row.HostUsername,
 			HostName:         row.HostName,
 			HostAvatarID:     deref(row.HostAvatar),
+			HostCoverID:      deref(row.HostCover),
 			Title:            row.Title,
 			Topic:            row.Topic,
 			Visibility:       room.Visibility(row.Visibility),
@@ -297,6 +300,7 @@ func (r *RoomRepository) ListParticipants(ctx context.Context, roomID string) ([
 			Username:      row.Username,
 			DisplayName:   row.DisplayName,
 			AvatarKey:     row.AvatarKey,
+			CoverKey:      row.CoverKey,
 			Role:          room.Role(row.Role),
 			IsMuted:       row.IsMuted,
 			HasRaisedHand: row.HasRaisedHand,

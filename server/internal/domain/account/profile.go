@@ -76,6 +76,7 @@ type UpdateProfileInput struct {
 type ProfileStore interface {
 	GetMyProfile(ctx context.Context) (MyProfile, error)
 	UpdateMyProfile(ctx context.Context, in UpdateProfileInput) error
+	ClearCover(ctx context.Context) error
 
 	BlockUser(ctx context.Context, targetID string) error
 	UnblockUser(ctx context.Context, targetID string) error
@@ -171,6 +172,15 @@ func (s *ProfileService) Update(ctx context.Context, in UpdateProfileInput) erro
 	// Siarkan ke sesi milik pengguna yang sama supaya nama/foto ikut berubah di
 	// perangkat lain secara realtime. Profil dibaca ulang agar nilai yang
 	// dikirim adalah yang otoritatif (mis. avatar diturunkan dari media_id).
+	s.broadcastUpdated(ctx)
+	return nil
+}
+
+// ClearCover menghapus background/cover profil pemanggil.
+func (s *ProfileService) ClearCover(ctx context.Context) error {
+	if err := s.store.ClearCover(ctx); err != nil {
+		return err
+	}
 	s.broadcastUpdated(ctx)
 	return nil
 }

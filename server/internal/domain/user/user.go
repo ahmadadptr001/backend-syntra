@@ -44,6 +44,9 @@ type Profile struct {
 	Username      string
 	DisplayName   string
 	AvatarMediaID string
+	// CoverMediaID adalah storage_key gambar latar/background profil (seperti
+	// AvatarMediaID). Kosong berarti tidak ada — klien pakai gradient bawaan.
+	CoverMediaID string
 
 	FollowerCount  int
 	FollowingCount int
@@ -57,6 +60,17 @@ type Profile struct {
 	FollowedAt time.Time
 }
 
+// Visitor adalah satu orang yang mengunjungi profil, plus total pengunjung.
+type Visitor struct {
+	UserID      string
+	Username    string
+	DisplayName string
+	AvatarKey   string
+	VisitedAt   time.Time
+	// Total adalah jumlah seluruh pengunjung (sama di setiap baris hasil).
+	Total int
+}
+
 // Repository adalah port penyimpanan.
 type Repository interface {
 	FindByUsername(ctx context.Context, username string) (Profile, error)
@@ -67,6 +81,11 @@ type Repository interface {
 	ListFollowers(ctx context.Context, username string) ([]Profile, error)
 	ListFollowRequests(ctx context.Context) ([]Profile, error)
 	DecideFollowRequest(ctx context.Context, followerID string, approve bool) error
+
+	// RecordVisit mencatat bahwa pemanggil membuka profil profileID.
+	RecordVisit(ctx context.Context, profileID string) error
+	// ListVisitors mengembalikan pengunjung terbaru profil pemanggil.
+	ListVisitors(ctx context.Context, limit int) ([]Visitor, error)
 }
 
 // Service memuat alur bisnis direktori pengguna.
@@ -155,6 +174,24 @@ func (s *Service) Search(ctx context.Context, query string, limit int) ([]Profil
 		limit = 30
 	}
 	return s.repo.SearchUsers(ctx, query, limit)
+}
+
+// RecordVisit mencatat bahwa pemanggil membuka profil profileID. Best effort:
+// kegagalan tidak boleh menggagalkan tampilan profil, jadi pemanggil di handler
+// menjalankannya fire-and-forget. Kunjungan ke diri sendiri disaring di database.
+func (s *Service) RecordVisit(ctx context.Context, profileID string) error {
+	if profileID == "" {
+		return ErrInvalidInput
+	}
+	return s.repo.RecordVisit(ctx, profileID)
+}
+
+// Visitors mengembalikan pengunjung terbaru profil pemanggil.
+func (s *Service) Visitors(ctx context.Context, limit int) ([]Visitor, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	return s.repo.ListVisitors(ctx, limit)
 }
 
 // ListFollowers mengembalikan pengikut sebuah pengguna.

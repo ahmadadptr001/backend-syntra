@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/ahmadadptr001/backend-syntra/internal/auth"
 	"github.com/ahmadadptr001/backend-syntra/internal/domain/user"
 	"github.com/ahmadadptr001/backend-syntra/internal/transport/rest/httpx"
 	"github.com/ahmadadptr001/backend-syntra/internal/transport/rest/middleware"
@@ -22,6 +23,8 @@ type UserService interface {
 	ListFollowers(ctx context.Context, username string) ([]user.Profile, error)
 	FollowRequests(ctx context.Context) ([]user.Profile, error)
 	DecideFollowRequest(ctx context.Context, username string, approve bool) error
+	RecordVisit(ctx context.Context, profileID string) error
+	Visitors(ctx context.Context, limit int) ([]user.Visitor, error)
 }
 
 // User menangani endpoint direktori pengguna dan graf pertemanan.
@@ -41,6 +44,7 @@ type profileDTO struct {
 	DisplayName   string `json:"display_name"`
 	AvatarMediaID string `json:"avatar_media_id,omitempty"`
 	AvatarURL     string `json:"avatar_url,omitempty"`
+	CoverURL      string `json:"cover_url,omitempty"`
 
 	FollowerCount  int `json:"follower_count"`
 	FollowingCount int `json:"following_count"`
@@ -61,6 +65,7 @@ func (h *User) toProfileDTO(p user.Profile) profileDTO {
 		// AvatarMediaID kini berisi storage_key (lihat migrasi 32); resolve ke
 		// URL siap pakai supaya avatar orang lain tampil, bukan cuma inisial.
 		AvatarURL:      h.media.PublicURL(p.AvatarMediaID),
+		CoverURL:       h.media.PublicURL(p.CoverMediaID),
 		FollowerCount:  p.FollowerCount,
 		FollowingCount: p.FollowingCount,
 		FollowStatus:   string(p.FollowStatus),
@@ -92,7 +97,58 @@ func (h *User) GetByUsername(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Record the visit for the profile owner's "who viewed me" list — but only when
+	// looking at someone else. Fire-and-forget: it must never delay or fail the view.
+	// The caller's principal (incl. JWT) is carried into the detached context so RLS
+	// still sees the right user.
+	if principal, ok := auth.FromContext(r.Context()); ok && !profile.IsSelf && profile.ID != "" {
+		go func(pid string, p auth.Principal) {
+			ctx, cancel := context.WithTimeout(auth.WithPrincipal(context.Background(), p), 5*time.Second)
+			defer cancel()
+			_ = h.svc.RecordVisit(ctx, pid)
+		}(profile.ID, principal)
+	}
+
 	httpx.OK(w, h.toProfileDTO(profile))
+}
+
+type visitorDTO struct {
+	UserID      string    `json:"user_id"`
+	Username    string    `json:"username"`
+	DisplayName string    `json:"display_name"`
+	AvatarURL   string    `json:"avatar_url,omitempty"`
+	VisitedAt   time.Time `json:"visited_at"`
+}
+
+type visitorsResponse struct {
+	Total    int          `json:"total"`
+	Visitors []visitorDTO `json:"visitors"`
+}
+
+// Visitors menangani GET /api/v1/users/me/visitors — pengunjung profil sendiri.
+func (h *User) Visitors(w http.ResponseWriter, r *http.Request) {
+	limit := 20
+	if n, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil && n > 0 {
+		limit = n
+	}
+	visitors, err := h.svc.Visitors(r.Context(), limit)
+	if err != nil {
+		writeUserError(w, r, err)
+		return
+	}
+	dtos := make([]visitorDTO, 0, len(visitors))
+	total := 0
+	for _, v := range visitors {
+		total = v.Total // sama di setiap baris
+		dtos = append(dtos, visitorDTO{
+			UserID:      v.UserID,
+			Username:    v.Username,
+			DisplayName: v.DisplayName,
+			AvatarURL:   h.media.PublicURL(v.AvatarKey),
+			VisitedAt:   v.VisitedAt,
+		})
+	}
+	httpx.OK(w, visitorsResponse{Total: total, Visitors: dtos})
 }
 
 // Follow menangani POST /api/v1/users/{username}/follow.

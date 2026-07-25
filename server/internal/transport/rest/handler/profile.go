@@ -15,6 +15,7 @@ import (
 type ProfileService interface {
 	Get(ctx context.Context) (account.MyProfile, error)
 	Update(ctx context.Context, in account.UpdateProfileInput) error
+	ClearCover(ctx context.Context) error
 	Block(ctx context.Context, username string) error
 	Unblock(ctx context.Context, username string) error
 	ListBlocked(ctx context.Context) ([]account.BlockedUser, error)
@@ -125,6 +126,15 @@ func (h *Profile) UpdateMe(w http.ResponseWriter, r *http.Request) {
 
 	// Balas profil terbaru supaya klien tidak perlu memuat ulang.
 	h.GetMe(w, r)
+}
+
+// ClearCover menangani DELETE /api/v1/users/me/cover — hapus background profil.
+func (h *Profile) ClearCover(w http.ResponseWriter, r *http.Request) {
+	if err := h.svc.ClearCover(r.Context()); err != nil {
+		writeProfileError(w, r, err)
+		return
+	}
+	httpx.NoContent(w)
 }
 
 type blockedDTO struct {

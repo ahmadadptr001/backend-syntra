@@ -281,6 +281,9 @@ type reelCommentRow struct {
 	AuthorName      string    `json:"author_name"`
 	AuthorAvatar    *string   `json:"author_avatar"`
 	ParentCommentID *string   `json:"parent_comment_id"`
+	ReplyToID       *string   `json:"reply_to_comment_id"`
+	ReplyToUsername *string   `json:"reply_to_username"`
+	ReplyToBody     *string   `json:"reply_to_body"`
 	Body            string    `json:"body"`
 	LikeCount       int       `json:"like_count"`
 	CreatedAt       time.Time `json:"created_at"`
@@ -297,12 +300,28 @@ func (r *ReelRepository) AddComment(ctx context.Context, c reel.Comment) error {
 		"p_reel":       c.ReelID,
 		"p_body":       c.Body,
 		"p_parent":     nullIfEmpty(c.ParentCommentID),
+		"p_reply_to":   nullIfEmpty(c.ReplyToID),
 		"p_created_at": c.CreatedAt.UTC(),
 	}
-	if err := r.client.RPC(ctx, "add_reel_comment", args, nil, actor); err != nil {
+	err = r.client.RPC(ctx, "add_reel_comment", args, nil, actor)
+	if err != nil && isMissingFunction(err) {
+		// Migrasi 44 (kutipan balasan) belum dijalankan: overload 6-argumen belum
+		// ada. Ulangi dengan bentuk 5-argumen lama supaya komentar tetap terkirim
+		// (kutipan reply_to hanya tidak tersimpan sampai migrasi dijalankan).
+		delete(args, "p_reply_to")
+		err = r.client.RPC(ctx, "add_reel_comment", args, nil, actor)
+	}
+	if err != nil {
 		return translateReel(err)
 	}
 	return nil
+}
+
+// isMissingFunction menandai RPC ke fungsi yang belum ada di schema cache
+// PostgREST (PGRST202) — dipakai untuk fallback saat migrasi belum dijalankan.
+func isMissingFunction(err error) bool {
+	var apiErr *sb.APIError
+	return errors.As(err, &apiErr) && apiErr.Code == "PGRST202"
 }
 
 // CommentAuthor mengembalikan id penulis sebuah komentar (untuk memberi tahu dia
@@ -348,6 +367,9 @@ func (r *ReelRepository) ListComments(ctx context.Context, reelID, userID string
 			AuthorName:      row.AuthorName,
 			AuthorAvatarID:  deref(row.AuthorAvatar),
 			ParentCommentID: deref(row.ParentCommentID),
+			ReplyToID:       deref(row.ReplyToID),
+			ReplyToUsername: deref(row.ReplyToUsername),
+			ReplyToBody:     deref(row.ReplyToBody),
 			Body:            row.Body,
 			LikeCount:       row.LikeCount,
 			CreatedAt:       row.CreatedAt,

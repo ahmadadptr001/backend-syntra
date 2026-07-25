@@ -101,6 +101,18 @@ func (r *ProfileRepository) GetMyProfile(ctx context.Context) (account.MyProfile
 //
 // Field nil dikirim sebagai NULL, yang di fungsi berarti "biarkan seperti
 // semula" — jadi klien bisa mengirim hanya yang benar-benar berubah.
+// ClearCover memanggil clear_profile_cover — mengosongkan cover_media_id.
+func (r *ProfileRepository) ClearCover(ctx context.Context) error {
+	actor, err := callerOption(ctx)
+	if err != nil {
+		return err
+	}
+	if err := r.client.RPC(ctx, "clear_profile_cover", map[string]any{}, nil, actor); err != nil {
+		return translateProfile(err)
+	}
+	return nil
+}
+
 func (r *ProfileRepository) UpdateMyProfile(ctx context.Context, in account.UpdateProfileInput) error {
 	actor, err := callerOption(ctx)
 	if err != nil {
