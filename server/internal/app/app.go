@@ -113,7 +113,7 @@ func New(ctx context.Context, cfg *config.Config, log *slog.Logger) (*App, error
 	// sfu memenuhi TokenIssuer sekaligus WebhookVerifier — objek yang sama
 	// menerbitkan token dan memverifikasi webhook LiveKit.
 	callService := call.NewService(callRepo, sfu, sfu, ws.NewPublisher(hub))
-	notifService := notification.NewService(notifRepo, ws.NewPublisher(hub))
+	notifService := notification.NewService(notifRepo, ws.NewPublisher(hub), mediaService.PublicURL)
 	// Adapter: reel domain memberi tahu penulis komentar saat dibalas, tanpa
 	// bergantung langsung pada domain notification.
 	reelService := reel.NewService(reelRepo, ws.NewPublisher(hub), commentReplyNotifier{notif: notifService})
@@ -314,9 +314,10 @@ type commentReplyNotifier struct {
 	notif *notification.Service
 }
 
-func (c commentReplyNotifier) NotifyCommentReply(ctx context.Context, recipientID, reelID string) error {
+func (c commentReplyNotifier) NotifyCommentReply(ctx context.Context, recipientID, actorID, reelID string) error {
 	return c.notif.Notify(ctx, notification.NotifyInput{
 		RecipientID: recipientID,
+		ActorID:     actorID,
 		Type:        notification.TypeComment,
 		SubjectType: "reel",
 		SubjectID:   reelID,

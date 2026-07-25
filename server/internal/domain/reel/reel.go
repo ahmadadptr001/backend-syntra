@@ -143,7 +143,7 @@ type Repository interface {
 // bukan tipe konkret, supaya domain reel tidak bergantung pada domain notification.
 // Diisi adapter di app.go. Nil = fitur notifikasi dimatikan (best effort).
 type CommentNotifier interface {
-	NotifyCommentReply(ctx context.Context, recipientID, reelID string) error
+	NotifyCommentReply(ctx context.Context, recipientID, actorID, reelID string) error
 }
 
 // Service memuat alur bisnis reel.
@@ -362,7 +362,8 @@ func (s *Service) AddComment(ctx context.Context, reelID, userID, body, parentID
 	// disaring di lapisan notifikasi (database).
 	if parentID != "" && s.notifier != nil {
 		if author, err := s.repo.CommentAuthor(ctx, parentID); err == nil && author != "" {
-			_ = s.notifier.NotifyCommentReply(ctx, author, reelID)
+			// userID = pelaku (yang membalas); author = penerima (pemilik komentar).
+			_ = s.notifier.NotifyCommentReply(ctx, author, userID, reelID)
 		}
 	}
 	return c, nil

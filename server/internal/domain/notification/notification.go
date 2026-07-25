@@ -68,13 +68,19 @@ type Notification struct {
 }
 
 // Event adalah bentuk payload yang disiarkan ke klien.
+//
+// Actor name/avatar disertakan supaya klien bisa menampilkan notifikasi kaya
+// ("budi membalas komentar kamu" + fotonya) tanpa perjalanan tambahan.
 type Event struct {
-	ID          string    `json:"id"`
-	Type        string    `json:"type"`
-	ActorID     string    `json:"actor_id,omitempty"`
-	SubjectType string    `json:"subject_type,omitempty"`
-	SubjectID   string    `json:"subject_id,omitempty"`
-	CreatedAt   time.Time `json:"created_at"`
+	ID             string    `json:"id"`
+	Type           string    `json:"type"`
+	ActorID        string    `json:"actor_id,omitempty"`
+	ActorUsername  string    `json:"actor_username,omitempty"`
+	ActorName      string    `json:"actor_name,omitempty"`
+	ActorAvatarURL string    `json:"actor_avatar_url,omitempty"`
+	SubjectType    string    `json:"subject_type,omitempty"`
+	SubjectID      string    `json:"subject_id,omitempty"`
+	CreatedAt      time.Time `json:"created_at"`
 }
 
 // Repository adalah port penyimpanan.
@@ -83,7 +89,13 @@ type Repository interface {
 	CountUnread(ctx context.Context) (int, error)
 	MarkRead(ctx context.Context, notificationID string) (int, error)
 	Create(ctx context.Context, n Notification, recipientID string) (bool, error)
+	// ActorProfile mengambil username, nama tampil, dan storage_key avatar seorang
+	// aktor untuk memperkaya siaran notifikasi. Nilai kosong bila tak ada.
+	ActorProfile(ctx context.Context, actorID string) (username, name, avatarKey string, err error)
 }
+
+// AvatarURL mengubah storage_key avatar menjadi URL siap-render.
+type AvatarURL func(storageKey string) string
 
 // Publisher adalah port siaran realtime.
 type Publisher interface {
@@ -92,13 +104,17 @@ type Publisher interface {
 
 // Service memuat alur bisnis notifikasi.
 type Service struct {
-	repo Repository
-	pub  Publisher
+	repo      Repository
+	pub       Publisher
+	avatarURL AvatarURL
 }
 
-// NewService merangkai service.
-func NewService(repo Repository, pub Publisher) *Service {
-	return &Service{repo: repo, pub: pub}
+// NewService merangkai service. avatarURL boleh nil (avatar tidak diperkaya).
+func NewService(repo Repository, pub Publisher, avatarURL AvatarURL) *Service {
+	if avatarURL == nil {
+		avatarURL = func(string) string { return "" }
+	}
+	return &Service{repo: repo, pub: pub, avatarURL: avatarURL}
 }
 
 // List mengembalikan notifikasi pemanggil, terbaru dulu.
@@ -129,6 +145,9 @@ func (s *Service) MarkRead(ctx context.Context, notificationID string) (int, err
 // NotifyInput adalah permintaan membuat notifikasi.
 type NotifyInput struct {
 	RecipientID string
+	// ActorID adalah pelaku (yang membalas/menyukai/mengikuti). Dipakai untuk
+	// memperkaya siaran dengan nama + foto pelaku. Boleh kosong.
+	ActorID     string
 	Type        Type
 	SubjectType string
 	SubjectID   string
@@ -160,14 +179,29 @@ func (s *Service) Notify(ctx context.Context, in NotifyInput) error {
 		return nil
 	}
 
+	// Perkaya dengan profil pelaku supaya klien bisa menampilkan nama + foto.
+	// Best effort: kalau lookup gagal, tetap siarkan tanpa profil.
+	var actorUsername, actorName, actorAvatarURL string
+	if in.ActorID != "" {
+		if uname, name, avatarKey, err := s.repo.ActorProfile(ctx, in.ActorID); err == nil {
+			actorUsername = uname
+			actorName = name
+			actorAvatarURL = s.avatarURL(avatarKey)
+		}
+	}
+
 	// Siaran gagal tidak membatalkan notifikasi yang sudah tersimpan — ia akan
 	// terlihat saat daftar dimuat berikutnya.
 	_ = s.pub.Publish(ctx, topic.User(in.RecipientID), "notification.new", Event{
-		ID:          n.ID,
-		Type:        string(n.Type),
-		SubjectType: n.SubjectType,
-		SubjectID:   n.SubjectID,
-		CreatedAt:   n.CreatedAt,
+		ID:             n.ID,
+		Type:           string(n.Type),
+		ActorID:        in.ActorID,
+		ActorUsername:  actorUsername,
+		ActorName:      actorName,
+		ActorAvatarURL: actorAvatarURL,
+		SubjectType:    n.SubjectType,
+		SubjectID:      n.SubjectID,
+		CreatedAt:      n.CreatedAt,
 	})
 
 	return nil

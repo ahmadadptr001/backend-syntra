@@ -3,6 +3,7 @@ package supabase
 import (
 	"context"
 	"errors"
+	"net/url"
 	"time"
 
 	"github.com/ahmadadptr001/backend-syntra/internal/domain/notification"
@@ -20,6 +21,46 @@ func NewNotificationRepository(client *sb.Client) *NotificationRepository {
 }
 
 var _ notification.Repository = (*NotificationRepository)(nil)
+
+// ActorProfile mengambil username, display_name, dan storage_key avatar seorang
+// pengguna untuk memperkaya siaran notifikasi (nama + foto pelaku).
+//
+// Service role: hanya membaca data profil publik (username, nama, key avatar)
+// untuk satu id, dan avatar di-resolve jadi URL di lapisan domain. Dua query
+// ringan (users + user_profiles+media) digabung lewat embed PostgREST.
+func (r *NotificationRepository) ActorProfile(ctx context.Context, actorID string) (string, string, string, error) {
+	if actorID == "" {
+		return "", "", "", nil
+	}
+	q := url.Values{}
+	q.Set("select", "username,user_profiles(display_name,media_assets:avatar_media_id(storage_key))")
+	q.Set("id", "eq."+actorID)
+	q.Set("limit", "1")
+	var rows []struct {
+		Username string `json:"username"`
+		Profile  *struct {
+			DisplayName string `json:"display_name"`
+			Avatar      *struct {
+				StorageKey string `json:"storage_key"`
+			} `json:"media_assets"`
+		} `json:"user_profiles"`
+	}
+	if err := r.client.Select(ctx, "users", &rows, sb.WithServiceRole(), sb.WithQuery(q)); err != nil {
+		return "", "", "", translate(err)
+	}
+	if len(rows) == 0 {
+		return "", "", "", nil
+	}
+	row := rows[0]
+	name, avatarKey := "", ""
+	if row.Profile != nil {
+		name = row.Profile.DisplayName
+		if row.Profile.Avatar != nil {
+			avatarKey = row.Profile.Avatar.StorageKey
+		}
+	}
+	return row.Username, name, avatarKey, nil
+}
 
 type notificationRow struct {
 	ID             string    `json:"id"`
