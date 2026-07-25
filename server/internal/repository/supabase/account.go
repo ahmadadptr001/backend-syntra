@@ -59,6 +59,89 @@ func (e gotrueError) text() string {
 
 // SignUp mendaftarkan akun baru di Supabase Auth.
 //
+// Kalau kunci service tersedia, jalur admin dipakai: pengguna dibuat lewat
+// /auth/v1/admin/users dengan email_confirm=true, lalu langsung di-sign-in.
+// Hasilnya pengguna bisa MASUK SEKETIKA tanpa mengklik tautan konfirmasi email
+// — persis yang diinginkan untuk aplikasi ini — dan juga melewati rate-limit
+// email GoTrue (free tier tanpa SMTP hanya mengizinkan beberapa signup/jam).
+//
+// Tanpa kunci service, jalur signup publik lama dipakai sebagai fallback; di
+// situ, kalau proyek mewajibkan konfirmasi email, sesi bisa kosong dan profil
+// baru dibuat saat login pertama (lihat Register/Login di domain).
+func (r *AccountRepository) SignUp(ctx context.Context, email, password string) (account.Session, error) {
+	if r.client.ServiceRoleKey() != "" {
+		return r.signUpAdmin(ctx, email, password)
+	}
+	return r.signUpPublic(ctx, email, password)
+}
+
+// signUpAdmin membuat pengguna terkonfirmasi lewat admin API, lalu sign-in.
+func (r *AccountRepository) signUpAdmin(ctx context.Context, email, password string) (account.Session, error) {
+	_, raw, status, err := r.adminCreateUser(ctx, email, password)
+	if err != nil {
+		return account.Session{}, err
+	}
+
+	// Admin API membalas 422 (kadang 409) kalau email sudah ada — kembalikan
+	// sebagai kegagalan yang jujur, bukan sukses palsu.
+	if status == http.StatusConflict || status == http.StatusUnprocessableEntity {
+		var e gotrueError
+		_ = json.Unmarshal(raw, &e)
+		if strings.Contains(strings.ToLower(e.text()), "already") ||
+			e.ErrorCode == "email_exists" || e.ErrorCode == "user_already_exists" {
+			return account.Session{}, account.ErrEmailTaken
+		}
+		return account.Session{}, translateGoTrue(status, raw)
+	}
+	if status >= http.StatusBadRequest {
+		return account.Session{}, translateGoTrue(status, raw)
+	}
+
+	// Pengguna sudah ada & terkonfirmasi — tukar kredensial dengan sesi.
+	return r.SignIn(ctx, email, password)
+}
+
+// adminCreateUser memanggil POST /auth/v1/admin/users dengan kunci service.
+// email_confirm=true menandai email langsung terverifikasi (tanpa tautan).
+func (r *AccountRepository) adminCreateUser(ctx context.Context, email, password string) (account.Session, []byte, int, error) {
+	body := map[string]any{
+		"email":         email,
+		"password":      password,
+		"email_confirm": true,
+	}
+	payload, err := json.Marshal(body)
+	if err != nil {
+		return account.Session{}, nil, 0, err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		r.client.BaseURL()+"/auth/v1/admin/users", strings.NewReader(string(payload)))
+	if err != nil {
+		return account.Session{}, nil, 0, err
+	}
+	svc := r.client.ServiceRoleKey()
+	req.Header.Set("apikey", svc)
+	req.Header.Set("Authorization", "Bearer "+svc)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := r.client.HTTPClient().Do(req)
+	if err != nil {
+		return account.Session{}, nil, 0, fmt.Errorf("account: gagal menghubungi Supabase: %w", err)
+	}
+	defer func() {
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4<<10))
+		_ = resp.Body.Close()
+	}()
+
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, 128<<10))
+	if err != nil {
+		return account.Session{}, nil, resp.StatusCode, err
+	}
+	return account.Session{}, raw, resp.StatusCode, nil
+}
+
+// signUpPublic adalah jalur signup lama (tanpa kunci service).
+//
 // Supabase TIDAK membalas error untuk email yang sudah terdaftar — ia membalas
 // 200 dengan objek pengguna palsu ber-`identities` kosong. Itu perilaku
 // anti-enumerasi yang disengaja: penyerang tidak bisa memakai signup untuk
@@ -67,7 +150,7 @@ func (e gotrueError) text() string {
 // Tetapi bagi klien yang sah, balasan itu terlihat seperti pendaftaran
 // berhasil — dan sempat membuat tim aplikasi menerima 201 padahal seharusnya
 // 409. Pemeriksaan di bawah mengembalikannya menjadi kegagalan yang jujur.
-func (r *AccountRepository) SignUp(ctx context.Context, email, password string) (account.Session, error) {
+func (r *AccountRepository) signUpPublic(ctx context.Context, email, password string) (account.Session, error) {
 	session, raw, err := r.callGoTrueRaw(ctx, "/auth/v1/signup", map[string]any{
 		"email":    email,
 		"password": password,

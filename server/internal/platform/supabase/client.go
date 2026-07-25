@@ -121,6 +121,11 @@ func (c *Client) BaseURL() string { return c.baseURL }
 // (misalnya verifier GoTrue di internal/auth).
 func (c *Client) AnonKey() string { return c.anonKey }
 
+// ServiceRoleKey dibutuhkan pemanggil server-side yang menyusun permintaan admin
+// GoTrue sendiri — mis. membuat pengguna langsung terkonfirmasi (/auth/v1/admin).
+// Kosong kalau tak dikonfigurasi. JANGAN pernah meneruskannya ke klien.
+func (c *Client) ServiceRoleKey() string { return c.serviceKey }
+
 // HTTPClient mengembalikan http.Client bersama, supaya connection pool-nya
 // dipakai ulang alih-alih membuat pool baru per komponen.
 func (c *Client) HTTPClient() *http.Client { return c.httpc }
