@@ -2,9 +2,11 @@ package handler
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/ahmadadptr001/backend-syntra/internal/auth"
@@ -15,7 +17,7 @@ import (
 
 // StoryService adalah bagian domain story yang dipakai handler REST.
 type StoryService interface {
-	Create(ctx context.Context, userID, mediaID string, visibility story.Visibility) (story.Story, error)
+	Create(ctx context.Context, userID, mediaID string, visibility story.Visibility, overlays string) (story.Story, error)
 	ListGrouped(ctx context.Context, userID string) ([]story.Group, error)
 	ListMine(ctx context.Context, userID string, includeExpired bool) ([]story.Mine, error)
 	Viewers(ctx context.Context, storyID, userID string, before story.ViewerCursor, limit int) ([]story.Viewer, error)
@@ -40,14 +42,15 @@ func NewStory(svc StoryService, media MediaURLResolver) *Story {
 }
 
 type storyDTO struct {
-	ID         string    `json:"id"`
-	MediaID    string    `json:"media_id"`
-	MediaKind  string    `json:"media_kind"`
-	MediaURL   string    `json:"media_url"`
-	DurationMs int       `json:"duration_ms,omitempty"`
-	Viewed     bool      `json:"viewed"`
-	CreatedAt  time.Time `json:"created_at"`
-	ExpiresAt  time.Time `json:"expires_at"`
+	ID         string          `json:"id"`
+	MediaID    string          `json:"media_id"`
+	MediaKind  string          `json:"media_kind"`
+	MediaURL   string          `json:"media_url"`
+	DurationMs int             `json:"duration_ms,omitempty"`
+	Viewed     bool            `json:"viewed"`
+	Overlays   json.RawMessage `json:"overlays,omitempty"`
+	CreatedAt  time.Time       `json:"created_at"`
+	ExpiresAt  time.Time       `json:"expires_at"`
 }
 
 // storyGroupDTO adalah bentuk yang langsung dipakai story row di aplikasi:
@@ -88,6 +91,7 @@ func (h *Story) List(w http.ResponseWriter, r *http.Request) {
 				MediaURL:   h.media.PublicURL(s.StorageKey),
 				DurationMs: s.DurationMs,
 				Viewed:     s.Viewed,
+				Overlays:   overlaysJSON(s.Overlays),
 				CreatedAt:  s.CreatedAt,
 				ExpiresAt:  s.ExpiresAt,
 			})
@@ -110,8 +114,9 @@ func (h *Story) List(w http.ResponseWriter, r *http.Request) {
 }
 
 type createStoryRequest struct {
-	MediaID    string `json:"media_id"`
-	Visibility string `json:"visibility,omitempty"`
+	MediaID    string          `json:"media_id"`
+	Visibility string          `json:"visibility,omitempty"`
+	Overlays   json.RawMessage `json:"overlays,omitempty"`
 }
 
 // Create menangani POST /api/v1/stories.
@@ -130,6 +135,7 @@ func (h *Story) Create(w http.ResponseWriter, r *http.Request) {
 		auth.UserID(r.Context()),
 		req.MediaID,
 		story.Visibility(req.Visibility),
+		string(req.Overlays),
 	)
 	if err != nil {
 		writeStoryError(w, r, err)
@@ -139,9 +145,23 @@ func (h *Story) Create(w http.ResponseWriter, r *http.Request) {
 	httpx.Created(w, storyDTO{
 		ID:        created.ID,
 		MediaID:   created.MediaID,
+		Overlays:  overlaysJSON(created.Overlays),
 		CreatedAt: created.CreatedAt,
 		ExpiresAt: created.ExpiresAt,
 	})
+}
+
+// overlaysJSON mengubah string overlays domain menjadi json.RawMessage yang aman
+// (nil bila kosong/invalid, supaya omitempty menghilangkannya).
+func overlaysJSON(raw string) json.RawMessage {
+	raw = strings.TrimSpace(raw)
+	if raw == "" || raw == "{}" || raw == "null" {
+		return nil
+	}
+	if !json.Valid([]byte(raw)) {
+		return nil
+	}
+	return json.RawMessage(raw)
 }
 
 // MarkViewed menangani POST /api/v1/stories/{id}/view.

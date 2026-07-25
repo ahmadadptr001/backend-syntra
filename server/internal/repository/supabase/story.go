@@ -2,7 +2,9 @@ package supabase
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/ahmadadptr001/backend-syntra/internal/domain/story"
@@ -28,13 +30,14 @@ type storyRow struct {
 	AuthorUsername string    `json:"author_username"`
 	AuthorName     string    `json:"author_name"`
 	AuthorAvatar   string    `json:"author_avatar_key"`
-	MediaID        string    `json:"media_id"`
-	MediaKind      string    `json:"media_kind"`
-	StorageKey     string    `json:"storage_key"`
-	DurationMs     *int      `json:"duration_ms"`
-	CreatedAt      time.Time `json:"created_at"`
-	ExpiresAt      time.Time `json:"expires_at"`
-	Viewed         bool      `json:"viewed"`
+	MediaID        string          `json:"media_id"`
+	MediaKind      string          `json:"media_kind"`
+	StorageKey     string          `json:"storage_key"`
+	DurationMs     *int            `json:"duration_ms"`
+	CreatedAt      time.Time       `json:"created_at"`
+	ExpiresAt      time.Time       `json:"expires_at"`
+	Viewed         bool            `json:"viewed"`
+	Overlays       json.RawMessage `json:"overlays"`
 }
 
 // Create memanggil fungsi create_story.
@@ -49,6 +52,7 @@ func (r *StoryRepository) Create(ctx context.Context, s story.Story) error {
 		"p_media":      s.MediaID,
 		"p_visibility": string(s.Visibility),
 		"p_created_at": s.CreatedAt.UTC(),
+		"p_overlays":   overlaysArg(s.Overlays),
 	}
 
 	if err := r.client.RPC(ctx, "create_story", args, nil, actor); err != nil {
@@ -89,12 +93,27 @@ func (r *StoryRepository) ListActive(ctx context.Context, userID string) ([]stor
 			MediaKind:      row.MediaKind,
 			StorageKey:     row.StorageKey,
 			DurationMs:     duration,
+			Overlays:       string(row.Overlays),
 			CreatedAt:      row.CreatedAt,
 			ExpiresAt:      row.ExpiresAt,
 			Viewed:         row.Viewed,
 		})
 	}
 	return out, nil
+}
+
+// overlaysArg mengubah string JSON overlays klien menjadi nilai yang PostgREST
+// kirim apa adanya sebagai jsonb. Kosong/invalid -> objek kosong.
+func overlaysArg(raw string) any {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return map[string]any{}
+	}
+	var v any
+	if err := json.Unmarshal([]byte(raw), &v); err != nil {
+		return map[string]any{}
+	}
+	return v
 }
 
 type myStoryRow struct {

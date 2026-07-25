@@ -56,6 +56,10 @@ type Story struct {
 
 	Visibility Visibility
 
+	// Overlays adalah JSON mentah (mis. {"music":{...}}) yang dilampirkan klien —
+	// dipakai untuk menempelkan lagu ke story. Kosong = tidak ada overlay.
+	Overlays string
+
 	CreatedAt time.Time
 	ExpiresAt time.Time
 
@@ -167,7 +171,7 @@ func NewService(repo Repository, pub Publisher) *Service {
 //
 // Media harus sudah terdaftar lebih dulu lewat alur unggah — story hanya
 // menunjuk ke media, tidak pernah membawa byte-nya.
-func (s *Service) Create(ctx context.Context, userID, mediaID string, visibility Visibility) (Story, error) {
+func (s *Service) Create(ctx context.Context, userID, mediaID string, visibility Visibility, overlays string) (Story, error) {
 	if userID == "" || mediaID == "" {
 		return Story{}, ErrInvalidInput
 	}
@@ -186,6 +190,7 @@ func (s *Service) Create(ctx context.Context, userID, mediaID string, visibility
 		AuthorID:   userID,
 		MediaID:    mediaID,
 		Visibility: visibility,
+		Overlays:   overlays,
 		CreatedAt:  now,
 		ExpiresAt:  now.Add(Lifetime),
 	}
