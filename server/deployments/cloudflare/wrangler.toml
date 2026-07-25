@@ -1,0 +1,16 @@
+# Deploy worker media-proxy lewat CLI (opsional — bisa juga via dashboard, lihat README).
+#
+#   npm i -g wrangler
+#   wrangler login
+#   wrangler deploy
+#
+# Route mengikat worker ke cdn.syntra.fun. Zona "syntra.fun" harus sudah ada di
+# akun Cloudflare yang sama (sama seperti api.syntra.fun).
+
+name = "syntra-media-proxy"
+main = "media-proxy.js"
+compatibility_date = "2026-07-25"
+
+routes = [
+  { pattern = "cdn.syntra.fun/*", zone_name = "syntra.fun" }
+]

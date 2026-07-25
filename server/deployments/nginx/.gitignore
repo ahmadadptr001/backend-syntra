@@ -1,0 +1,2 @@
+# Cache media di disk (proxy_cache untuk /mediacdn/). Isinya runtime, jangan di-commit.
+cache/

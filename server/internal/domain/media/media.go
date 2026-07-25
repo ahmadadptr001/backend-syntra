@@ -126,14 +126,17 @@ type Service struct {
 	repo    Repository
 	storage Storage
 	bucket  string
+	// cdnBase, kalau diisi, membuat PublicURL mengarah ke CDN (Cloudflare) alih-
+	// alih langsung ke Supabase Storage — memangkas egress. Kosong = perilaku lama.
+	cdnBase string
 }
 
 // NewService merangkai service.
-func NewService(repo Repository, storage Storage, bucket string) *Service {
+func NewService(repo Repository, storage Storage, bucket, cdnBase string) *Service {
 	if bucket == "" {
 		bucket = "media"
 	}
-	return &Service{repo: repo, storage: storage, bucket: bucket}
+	return &Service{repo: repo, storage: storage, bucket: bucket, cdnBase: strings.TrimRight(cdnBase, "/")}
 }
 
 // PrepareUpload membuat id media dan izin unggah.
@@ -214,6 +217,13 @@ func (s *Service) DeleteAsset(ctx context.Context, mediaID, userID string) error
 func (s *Service) PublicURL(storageKey string) string {
 	if storageKey == "" {
 		return ""
+	}
+	// Lewat CDN kalau dikonfigurasi: Cloudflare men-cache tiap objek di edge,
+	// jadi Supabase hanya membayar egress pada tarikan pertama (cache-fill).
+	// Path meniru layout publik Supabase (<bucket>/<key>) supaya worker edge bisa
+	// memetakan balik ke objek asalnya.
+	if s.cdnBase != "" {
+		return s.cdnBase + "/" + s.bucket + "/" + strings.TrimPrefix(storageKey, "/")
 	}
 	return s.storage.PublicURL(s.bucket, storageKey)
 }

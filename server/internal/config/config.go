@@ -89,6 +89,13 @@ type Supabase struct {
 	// StorageBucket menampung media yang diunggah klien.
 	StorageBucket string
 
+	// MediaCDNBase, kalau diisi, mengubah URL BACA media agar melewati CDN
+	// (mis. Cloudflare) alih-alih langsung dari Supabase Storage — memangkas
+	// egress Supabase (Cloudflare men-cache tiap objek di edge, gratis).
+	// Contoh: https://cdn.syntra.fun. Unggah & hapus tetap ke Supabase. Kosong =
+	// pakai URL publik Supabase seperti biasa.
+	MediaCDNBase string
+
 	Timeout time.Duration
 
 	// AuthCacheTTL menentukan berapa lama hasil verifikasi token disimpan,
@@ -172,6 +179,7 @@ func Load() (*Config, error) {
 			AnonKey:        l.str("SUPABASE_ANON_KEY", ""),
 			ServiceRoleKey: l.str("SUPABASE_SERVICE_ROLE_KEY", ""),
 			StorageBucket:  l.str("SUPABASE_STORAGE_BUCKET", "media"),
+			MediaCDNBase:   l.str("SUPABASE_MEDIA_CDN_BASE", ""),
 			Timeout:        l.dur("SUPABASE_TIMEOUT", 10*time.Second),
 			AuthCacheTTL:   l.dur("SUPABASE_AUTH_CACHE_TTL", time.Minute),
 		},

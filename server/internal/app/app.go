@@ -104,7 +104,7 @@ func New(ctx context.Context, cfg *config.Config, log *slog.Logger) (*App, error
 			"petunjuk", "isi LIVEKIT_API_KEY, LIVEKIT_API_SECRET, dan LIVEKIT_URL di .env")
 	}
 
-	mediaService := media.NewService(mediaRepo, mediaStorage, cfg.Supabase.StorageBucket)
+	mediaService := media.NewService(mediaRepo, mediaStorage, cfg.Supabase.StorageBucket, cfg.Supabase.MediaCDNBase)
 	chatService := chat.NewService(chatRepo, ws.NewPublisher(hub), log, mediaService.PublicURL)
 	storyService := story.NewService(storyRepo, ws.NewPublisher(hub))
 	userService := user.NewService(userRepo)
