@@ -215,7 +215,7 @@ func (s *Service) Answer(ctx context.Context, callID, userID, identity, conversa
 
 	if conversationID != "" {
 		s.notify(ctx, conversationID, EventAnswered, map[string]any{
-			"call_id": callID, "user_id": userID,
+			"call_id": callID, "conversation_id": conversationID, "user_id": userID,
 		})
 	}
 	return sess, nil
@@ -230,7 +230,9 @@ func (s *Service) Decline(ctx context.Context, callID, conversationID string) er
 		return err
 	}
 	if conversationID != "" {
-		s.notify(ctx, conversationID, EventEnded, map[string]any{"call_id": callID, "reason": "declined"})
+		s.notify(ctx, conversationID, EventEnded, map[string]any{
+			"call_id": callID, "conversation_id": conversationID, "reason": "declined",
+		})
 	}
 	return nil
 }
@@ -244,7 +246,9 @@ func (s *Service) Leave(ctx context.Context, callID, conversationID string) erro
 		return err
 	}
 	if conversationID != "" {
-		s.notify(ctx, conversationID, EventEnded, map[string]any{"call_id": callID, "reason": "left"})
+		s.notify(ctx, conversationID, EventEnded, map[string]any{
+			"call_id": callID, "conversation_id": conversationID, "reason": "left",
+		})
 	}
 	return nil
 }
@@ -297,7 +301,7 @@ func (s *Service) HandleSFUWebhook(ctx context.Context, authHeader string, body 
 	// supaya UI "sedang menelepon" mereka berhenti sendiri.
 	if res != nil && res.Ended && res.ConversationID != "" {
 		s.notify(ctx, res.ConversationID, EventEnded, map[string]any{
-			"call_id": res.CallID, "reason": "disconnected",
+			"call_id": res.CallID, "conversation_id": res.ConversationID, "reason": "disconnected",
 		})
 	}
 	return nil
