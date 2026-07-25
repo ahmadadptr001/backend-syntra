@@ -150,6 +150,14 @@ func (s *Service) PrepareUpload(ctx context.Context, userID string, kind Kind, e
 	if !kind.Valid() {
 		return Upload{}, ErrUnknownKind
 	}
+	// Defense in depth: userID goes straight into the storage path. If a
+	// misconfigured auth path ever leaked a JWT here (it once did — see
+	// auth.DevVerifier), the key became video/<jwt>/... which Supabase can't even
+	// serve (HTTP 400), and the file was effectively lost. Reject anything that
+	// isn't a plain id so a bad key can never be created again.
+	if !looksLikeUserID(userID) {
+		return Upload{}, ErrInvalidInput
+	}
 
 	mediaID := id.New()
 	key := fmt.Sprintf("%s/%s/%s%s", kind, userID, mediaID, sanitizeExtension(extension))
@@ -226,6 +234,21 @@ func (s *Service) PublicURL(storageKey string) string {
 		return s.cdnBase + "/" + s.bucket + "/" + strings.TrimPrefix(storageKey, "/")
 	}
 	return s.storage.PublicURL(s.bucket, storageKey)
+}
+
+// looksLikeUserID menolak nilai yang jelas bukan id pengguna biasa — terutama
+// JWT (mengandung titik, sangat panjang) — sebelum ia masuk ke path storage.
+// UUID Supabase 36 karakter; batas 64 memberi kelonggaran tanpa meloloskan JWT.
+func looksLikeUserID(id string) bool {
+	if len(id) == 0 || len(id) > 64 {
+		return false
+	}
+	for _, r := range id {
+		if r == '/' || r == '.' || r == ' ' {
+			return false
+		}
+	}
+	return true
 }
 
 // sanitizeExtension hanya meloloskan ekstensi sederhana. Nilai dari klien
