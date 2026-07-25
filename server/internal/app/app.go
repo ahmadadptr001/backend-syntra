@@ -109,7 +109,7 @@ func New(ctx context.Context, cfg *config.Config, log *slog.Logger) (*App, error
 	storyService := story.NewService(storyRepo, ws.NewPublisher(hub))
 	userService := user.NewService(userRepo)
 	presenceService := presence.NewService(presenceStore, cfg.WS.PresenceTTL, presenceVisibility)
-	roomService := room.NewService(roomRepo, sfu, ws.NewPublisher(hub))
+	roomService := room.NewService(roomRepo, sfu, ws.NewPublisher(hub), mediaService.PublicURL)
 	// sfu memenuhi TokenIssuer sekaligus WebhookVerifier — objek yang sama
 	// menerbitkan token dan memverifikasi webhook LiveKit.
 	callService := call.NewService(callRepo, sfu, sfu, ws.NewPublisher(hub))

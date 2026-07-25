@@ -209,11 +209,17 @@ type Service struct {
 	repo     Repository
 	issuer   TokenIssuer
 	notifier Notifier
+	// avatarURL mengubah storage key jadi URL siap-render, supaya siaran daftar
+	// peserta lewat WS membawa avatar_url yang sama seperti respons HTTP.
+	avatarURL func(string) string
 }
 
 // NewService merangkai service.
-func NewService(repo Repository, issuer TokenIssuer, notifier Notifier) *Service {
-	return &Service{repo: repo, issuer: issuer, notifier: notifier}
+func NewService(repo Repository, issuer TokenIssuer, notifier Notifier, avatarURL func(string) string) *Service {
+	if avatarURL == nil {
+		avatarURL = func(string) string { return "" }
+	}
+	return &Service{repo: repo, issuer: issuer, notifier: notifier, avatarURL: avatarURL}
 }
 
 // topicFor menyusun nama kanal siaran sebuah room.
@@ -508,6 +514,13 @@ func (s *Service) notify(ctx context.Context, roomID, event string, payload any)
 // Dikirim utuh, bukan sebagai delta, karena daftar room selalu kecil dan
 // pengiriman utuh membuat klien tidak bisa kehilangan sinkronisasi setelah
 // satu frame terlewat.
+//
+// Payload dibangun sebagai map ber-field snake_case DAN membawa avatar_url yang
+// sudah di-resolve — PERSIS bentuk yang dikirim handler HTTP GET .../participants.
+// Sebelumnya struct room.Participant disiarkan mentah, sehingga Go men-serialisasi
+// nama field PascalCase (UserID, DisplayName, …) yang tidak bisa diurai klien
+// (ia membaca user_id, display_name). Akibatnya SELURUH event peserta gagal diurai
+// dan voice room hanya ter-update lewat polling — tampak "tidak live".
 func (s *Service) notifyParticipants(ctx context.Context, roomID string) {
 	if s.notifier == nil {
 		return
@@ -516,9 +529,22 @@ func (s *Service) notifyParticipants(ctx context.Context, roomID string) {
 	if err != nil {
 		return
 	}
+	dto := make([]map[string]any, len(people))
+	for i, p := range people {
+		dto[i] = map[string]any{
+			"user_id":         p.UserID,
+			"username":        p.Username,
+			"display_name":    p.DisplayName,
+			"avatar_url":      s.avatarURL(p.AvatarKey),
+			"role":            string(p.Role),
+			"is_muted":        p.IsMuted,
+			"has_raised_hand": p.HasRaisedHand,
+			"joined_at":       p.JoinedAt,
+		}
+	}
 	s.notify(ctx, roomID, EventRoomParticipants, map[string]any{
 		"room_id":      roomID,
-		"participants": people,
+		"participants": dto,
 	})
 }
 
