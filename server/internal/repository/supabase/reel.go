@@ -3,6 +3,7 @@ package supabase
 import (
 	"context"
 	"errors"
+	"net/url"
 	"time"
 
 	"github.com/ahmadadptr001/backend-syntra/internal/domain/reel"
@@ -237,6 +238,27 @@ func (r *ReelRepository) AddComment(ctx context.Context, c reel.Comment) error {
 		return translateReel(err)
 	}
 	return nil
+}
+
+// CommentAuthor mengembalikan id penulis sebuah komentar (untuk memberi tahu dia
+// saat komentarnya dibalas). Memakai service role: RLS reel_comments membatasi
+// SELECT, dan yang dikembalikan hanya satu uuid untuk keperluan notifikasi —
+// bukan konten. Kembalikan string kosong kalau komentarnya tidak ada.
+func (r *ReelRepository) CommentAuthor(ctx context.Context, commentID string) (string, error) {
+	q := url.Values{}
+	q.Set("select", "author_id")
+	q.Set("id", "eq."+commentID)
+	q.Set("limit", "1")
+	var rows []struct {
+		AuthorID string `json:"author_id"`
+	}
+	if err := r.client.Select(ctx, "reel_comments", &rows, sb.WithServiceRole(), sb.WithQuery(q)); err != nil {
+		return "", translateReel(err)
+	}
+	if len(rows) == 0 {
+		return "", nil
+	}
+	return rows[0].AuthorID, nil
 }
 
 // ListComments memanggil list_reel_comments.

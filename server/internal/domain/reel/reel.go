@@ -132,8 +132,18 @@ type Repository interface {
 	RecordView(ctx context.Context, reelID, userID string) error
 
 	AddComment(ctx context.Context, c Comment) error
+	// CommentAuthor mengembalikan id penulis sebuah komentar (untuk notifikasi
+	// balasan). String kosong kalau tidak ada.
+	CommentAuthor(ctx context.Context, commentID string) (string, error)
 	ListComments(ctx context.Context, reelID, userID string, before Cursor, limit int) ([]Comment, error)
 	DeleteComment(ctx context.Context, commentID, userID string) error
+}
+
+// CommentNotifier memberi tahu seseorang bahwa komentarnya dibalas. Interface,
+// bukan tipe konkret, supaya domain reel tidak bergantung pada domain notification.
+// Diisi adapter di app.go. Nil = fitur notifikasi dimatikan (best effort).
+type CommentNotifier interface {
+	NotifyCommentReply(ctx context.Context, recipientID, reelID string) error
 }
 
 // Service memuat alur bisnis reel.
@@ -157,12 +167,15 @@ const (
 )
 
 type Service struct {
-	repo Repository
-	pub  Publisher
+	repo     Repository
+	pub      Publisher
+	notifier CommentNotifier
 }
 
-// NewService merangkai service.
-func NewService(repo Repository, pub Publisher) *Service { return &Service{repo: repo, pub: pub} }
+// NewService merangkai service. notifier boleh nil (notifikasi balasan dimatikan).
+func NewService(repo Repository, pub Publisher, notifier CommentNotifier) *Service {
+	return &Service{repo: repo, pub: pub, notifier: notifier}
+}
 
 // Create menyimpan reel baru dari media yang sudah diunggah & dikonfirmasi.
 //
@@ -342,6 +355,15 @@ func (s *Service) AddComment(ctx context.Context, reelID, userID, body, parentID
 			"user_id":    userID,
 			"body":       body,
 		})
+	}
+
+	// Kalau ini balasan, beri tahu penulis komentar induk. Best effort: kegagalan
+	// tidak menggagalkan komentar yang sudah tersimpan. Penerima=diri sendiri
+	// disaring di lapisan notifikasi (database).
+	if parentID != "" && s.notifier != nil {
+		if author, err := s.repo.CommentAuthor(ctx, parentID); err == nil && author != "" {
+			_ = s.notifier.NotifyCommentReply(ctx, author, reelID)
+		}
 	}
 	return c, nil
 }
