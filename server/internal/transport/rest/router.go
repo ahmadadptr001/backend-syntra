@@ -45,6 +45,7 @@ type Deps struct {
 	Profile *handler.Profile
 	Call    *handler.Call
 	Reel    *handler.Reel
+	Music   *handler.Music
 }
 
 // NewRouter membangun handler HTTP lengkap dengan middleware.
@@ -288,6 +289,19 @@ func NewRouter(d Deps) http.Handler {
 		protected(http.HandlerFunc(d.Reel.DeleteComment)))
 	mux.Handle("GET /api/v1/users/{username}/reels",
 		protected(http.HandlerFunc(d.Reel.ListByUser)))
+
+	// --- musik komunitas ---
+	//
+	// Pola literal "search" didaftarkan bersama "{id}"; ServeMux Go 1.22 memilih
+	// yang lebih spesifik, jadi urutan tak menentukan.
+	mux.Handle("GET /api/v1/music",
+		protected(http.HandlerFunc(d.Music.Feed)))
+	mux.Handle("POST /api/v1/music",
+		protected(http.HandlerFunc(d.Music.Create)))
+	mux.Handle("GET /api/v1/music/search",
+		protected(http.HandlerFunc(d.Music.Search)))
+	mux.Handle("DELETE /api/v1/music/{id}",
+		protected(http.HandlerFunc(d.Music.Delete)))
 
 	// --- notifikasi ---
 	//

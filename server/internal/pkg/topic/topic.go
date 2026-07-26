@@ -23,6 +23,7 @@ const (
 	// yang dilanggan semua pengguna terautentikasi saat tab terkait terbuka.
 	KindRoomsFeed Kind = "rooms"
 	KindReelsFeed Kind = "reels"
+	KindMusicFeed Kind = "music"
 )
 
 // feedID adalah id tetap kanal feed global — hanya ada satu per jenis, jadi
@@ -54,6 +55,10 @@ func RoomsFeed() string { return string(KindRoomsFeed) + separator + feedID }
 // (reel.new / reel.deleted) ke siapa pun yang sedang membuka tab Shorts.
 func ReelsFeed() string { return string(KindReelsFeed) + separator + feedID }
 
+// MusicFeed adalah kanal feed musik komunitas global: mengumumkan lagu baru
+// (music.new) ke siapa pun yang sedang membuka tab Musik.
+func MusicFeed() string { return string(KindMusicFeed) + separator + feedID }
+
 // Parse memecah topik menjadi jenis dan id.
 //
 // Dibutuhkan lapisan otorisasi: sebelum sebuah klien boleh berlangganan,
@@ -65,7 +70,7 @@ func Parse(name string) (Kind, string, bool) {
 	}
 
 	switch Kind(kind) {
-	case KindUser, KindConversation, KindRoom, KindReel, KindRoomsFeed, KindReelsFeed:
+	case KindUser, KindConversation, KindRoom, KindReel, KindRoomsFeed, KindReelsFeed, KindMusicFeed:
 		return Kind(kind), id, true
 	default:
 		return "", "", false

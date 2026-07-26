@@ -24,6 +24,7 @@ import (
 	"github.com/ahmadadptr001/backend-syntra/internal/domain/media"
 	"github.com/ahmadadptr001/backend-syntra/internal/domain/notification"
 	"github.com/ahmadadptr001/backend-syntra/internal/domain/presence"
+	"github.com/ahmadadptr001/backend-syntra/internal/domain/music"
 	"github.com/ahmadadptr001/backend-syntra/internal/domain/reel"
 	"github.com/ahmadadptr001/backend-syntra/internal/domain/room"
 	"github.com/ahmadadptr001/backend-syntra/internal/domain/story"
@@ -98,6 +99,7 @@ func New(ctx context.Context, cfg *config.Config, log *slog.Logger) (*App, error
 	roomRepo := repo.NewRoomRepository(supa)
 	callRepo := repo.NewCallRepository(supa)
 	reelRepo := repo.NewReelRepository(supa)
+	musicRepo := repo.NewMusicRepository(supa)
 	sfu := livekit.New(cfg.LiveKit.APIKey, cfg.LiveKit.APISecret, cfg.LiveKit.URL)
 	if !sfu.Configured() {
 		log.Warn("LiveKit belum dikonfigurasi: voice room bisa dibuat tapi TIDAK akan mengeluarkan suara",
@@ -117,6 +119,7 @@ func New(ctx context.Context, cfg *config.Config, log *slog.Logger) (*App, error
 	// Adapter: reel domain memberi tahu penulis komentar saat dibalas, tanpa
 	// bergantung langsung pada domain notification.
 	reelService := reel.NewService(reelRepo, ws.NewPublisher(hub), commentReplyNotifier{notif: notifService})
+	musicService := music.NewService(musicRepo, ws.NewPublisher(hub))
 	profileService := account.NewProfileService(profileRepo, profileRepo, ws.NewPublisher(hub), mediaService.PublicURL)
 
 	// --- transport: websocket ---
@@ -170,6 +173,7 @@ func New(ctx context.Context, cfg *config.Config, log *slog.Logger) (*App, error
 		Profile: handler.NewProfile(profileService, mediaService),
 		Call:    handler.NewCall(callService),
 		Reel:    handler.NewReel(reelService, mediaService),
+		Music:   handler.NewMusic(musicService, mediaService),
 	})
 
 	server := &http.Server{
