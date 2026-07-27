@@ -529,6 +529,7 @@ type convDetailRow struct {
 	ID          string    `json:"id"`
 	Type        string    `json:"type"`
 	Title       string    `json:"title"`
+	Description string    `json:"description"`
 	AvatarKey   string    `json:"avatar_key"`
 	CreatedBy   *string   `json:"created_by"`
 	MyRole      string    `json:"my_role"`
@@ -552,7 +553,8 @@ func (r *ChatRepository) GetConversation(ctx context.Context, conversationID, us
 	row := rows[0]
 	return chat.ConversationDetail{
 		ID: row.ID, Type: chat.ConversationType(row.Type), Title: row.Title,
-		AvatarKey: row.AvatarKey, CreatedBy: deref(row.CreatedBy), MyRole: row.MyRole,
+		Description: row.Description,
+		AvatarKey:   row.AvatarKey, CreatedBy: deref(row.CreatedBy), MyRole: row.MyRole,
 		IsMuted: row.IsMuted, MemberCount: row.MemberCount, CreatedAt: row.CreatedAt,
 	}, nil
 }
@@ -622,12 +624,23 @@ func (r *ChatRepository) Leave(ctx context.Context, conversationID, userID strin
 	return nil
 }
 
-func (r *ChatRepository) UpdateGroup(ctx context.Context, conversationID, userID, title, avatarMediaID string) error {
+func (r *ChatRepository) UpdateGroup(ctx context.Context, conversationID, userID, title, avatarMediaID string, description *string) error {
 	actor, err := actorOption(ctx, userID)
 	if err != nil {
 		return err
 	}
-	args := map[string]any{"p_conversation": conversationID, "p_title": nullIfEmpty(title), "p_avatar_media": nullIfEmpty(avatarMediaID)}
+	// description is a pointer so we can tell "leave unchanged" (nil → SQL NULL) from
+	// "clear it" (&"" → empty string).
+	var descArg any
+	if description != nil {
+		descArg = *description
+	}
+	args := map[string]any{
+		"p_conversation": conversationID,
+		"p_title":        nullIfEmpty(title),
+		"p_avatar_media": nullIfEmpty(avatarMediaID),
+		"p_description":  descArg,
+	}
 	if err := r.client.RPC(ctx, "update_group", args, nil, actor); err != nil {
 		return translate(err)
 	}

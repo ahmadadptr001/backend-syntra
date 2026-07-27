@@ -264,8 +264,12 @@ func (s *Service) Leave(ctx context.Context, conversationID, userID string) erro
 	return nil
 }
 
-// UpdateGroup mengubah judul dan/atau avatar grup. Hanya admin/owner.
-func (s *Service) UpdateGroup(ctx context.Context, conversationID, userID, title, avatarMediaID string) error {
+// MaxDescriptionLength membatasi panjang deskripsi grup.
+const MaxDescriptionLength = 500
+
+// UpdateGroup mengubah judul, avatar, dan/atau deskripsi grup. Hanya admin/owner.
+// description nil = jangan ubah; "" = kosongkan.
+func (s *Service) UpdateGroup(ctx context.Context, conversationID, userID, title, avatarMediaID string, description *string) error {
 	title = strings.TrimSpace(title)
 	if conversationID == "" || userID == "" {
 		return ErrInvalidInput
@@ -273,7 +277,10 @@ func (s *Service) UpdateGroup(ctx context.Context, conversationID, userID, title
 	if title != "" && utf8.RuneCountInString(title) > MaxTitleLength {
 		return ErrInvalidInput
 	}
-	if err := s.repo.UpdateGroup(ctx, conversationID, userID, title, avatarMediaID); err != nil {
+	if description != nil && utf8.RuneCountInString(*description) > MaxDescriptionLength {
+		return ErrInvalidInput
+	}
+	if err := s.repo.UpdateGroup(ctx, conversationID, userID, title, avatarMediaID, description); err != nil {
 		return err
 	}
 	s.broadcastConversation(ctx, conversationID)

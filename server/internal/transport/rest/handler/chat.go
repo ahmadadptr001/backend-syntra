@@ -33,7 +33,7 @@ type ChatService interface {
 	AddMembers(ctx context.Context, conversationID, userID string, memberIDs []string) (int, error)
 	RemoveMember(ctx context.Context, conversationID, userID, memberID string) error
 	Leave(ctx context.Context, conversationID, userID string) error
-	UpdateGroup(ctx context.Context, conversationID, userID, title, avatarMediaID string) error
+	UpdateGroup(ctx context.Context, conversationID, userID, title, avatarMediaID string, description *string) error
 	SetMemberRole(ctx context.Context, conversationID, userID, memberID, role string) error
 	Mute(ctx context.Context, conversationID, userID string, until *time.Time) error
 	React(ctx context.Context, messageID, userID, emoji string) error

@@ -7,6 +7,27 @@ pencarian, dan menu — semuanya dalam tema gelap `#121212` dengan font **Ralewa
 
 ---
 
+## 👥 Deskripsi grup — PATCH/GET /api/v1/conversations/{id} (2026-07-28)
+
+Grup kini punya **deskripsi** (teks bebas ≤500 char), setara title/avatar.
+
+| Verb & path | Yang berubah | Catatan |
+|---|---|---|
+| `PATCH /api/v1/conversations/{id}` | body kini menerima `description` | admin/owner saja |
+| `GET /api/v1/conversations/{id}` | balasan kini memuat `description` | untuk layar Info grup |
+
+- `description` di PATCH bersifat **opsional & nullable**: **tidak dikirim** = jangan
+  ubah (mis. saat hanya ganti judul/ikon); `""` = kosongkan.
+- **>500 char → 400**. Non-admin mengubah → 403.
+- Perubahan deskripsi memposting system message "Deskripsi grup diperbarui".
+
+**Ada migrasi:** `20260728000060_group_description.sql` — menambah kolom
+`conversations.description`, memperluas `update_group` (arg `p_description` DEFAULT
+NULL), dan `get_conversation` (kolom `description`). Jalankan migrasi + deploy Go
+sebelum fitur aktif. App memakainya di layar Info grup (lihat/ubah deskripsi).
+
+---
+
 ## 🎵 Edit judul lagu komunitas — PATCH /api/v1/music/{id} (2026-07-27)
 
 Menyusul `DELETE /api/v1/music/{id}`, sekarang pemilik lagu bisa **mengubah judul**

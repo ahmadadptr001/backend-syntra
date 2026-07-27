@@ -19,6 +19,7 @@ type conversationDetailDTO struct {
 	ID          string    `json:"id"`
 	Type        string    `json:"type"`
 	Title       string    `json:"title"`
+	Description string    `json:"description,omitempty"`
 	AvatarURL   string    `json:"avatar_url,omitempty"`
 	CreatedBy   string    `json:"created_by,omitempty"`
 	MyRole      string    `json:"my_role"`
@@ -35,7 +36,7 @@ func (h *Chat) GetConversation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.OK(w, conversationDetailDTO{
-		ID: d.ID, Type: string(d.Type), Title: d.Title,
+		ID: d.ID, Type: string(d.Type), Title: d.Title, Description: d.Description,
 		AvatarURL: h.media.PublicURL(d.AvatarKey), CreatedBy: d.CreatedBy,
 		MyRole: d.MyRole, IsMuted: d.IsMuted, MemberCount: d.MemberCount, CreatedAt: d.CreatedAt,
 	})
@@ -106,8 +107,10 @@ func (h *Chat) LeaveConversation(w http.ResponseWriter, r *http.Request) {
 }
 
 type updateGroupRequest struct {
-	Title         string `json:"title,omitempty"`
-	AvatarMediaID string `json:"avatar_media_id,omitempty"`
+	Title         string  `json:"title,omitempty"`
+	AvatarMediaID string  `json:"avatar_media_id,omitempty"`
+	// Pointer: absent = jangan ubah deskripsi; "" = kosongkan.
+	Description *string `json:"description,omitempty"`
 }
 
 // UpdateGroup menangani PATCH /api/v1/conversations/{id}.
@@ -117,7 +120,7 @@ func (h *Chat) UpdateGroup(w http.ResponseWriter, r *http.Request) {
 		httpx.Fail(w, r, http.StatusBadRequest, httpx.CodeBadRequest, err.Error())
 		return
 	}
-	err := h.svc.UpdateGroup(r.Context(), r.PathValue("id"), auth.UserID(r.Context()), req.Title, req.AvatarMediaID)
+	err := h.svc.UpdateGroup(r.Context(), r.PathValue("id"), auth.UserID(r.Context()), req.Title, req.AvatarMediaID, req.Description)
 	if err != nil {
 		writeDomainError(w, r, err)
 		return
