@@ -19,6 +19,7 @@ type MusicService interface {
 	Feed(ctx context.Context, userID string, limit int) ([]music.Track, error)
 	Search(ctx context.Context, userID, query string, limit int) ([]music.Track, error)
 	Delete(ctx context.Context, trackID, userID string) error
+	Rename(ctx context.Context, trackID, userID, title string) error
 }
 
 // Music menangani endpoint katalog musik komunitas.
@@ -130,6 +131,24 @@ func (h *Music) Search(w http.ResponseWriter, r *http.Request) {
 // Delete menangani DELETE /api/v1/music/{id}.
 func (h *Music) Delete(w http.ResponseWriter, r *http.Request) {
 	if err := h.svc.Delete(r.Context(), r.PathValue("id"), auth.UserID(r.Context())); err != nil {
+		writeMusicError(w, r, err)
+		return
+	}
+	httpx.NoContent(w)
+}
+
+type updateMusicRequest struct {
+	Title string `json:"title"`
+}
+
+// UpdateTitle menangani PATCH /api/v1/music/{id} — ubah judul (pemilik saja).
+func (h *Music) UpdateTitle(w http.ResponseWriter, r *http.Request) {
+	var req updateMusicRequest
+	if err := httpx.DecodeJSON(w, r, &req); err != nil {
+		httpx.Fail(w, r, http.StatusBadRequest, httpx.CodeBadRequest, err.Error())
+		return
+	}
+	if err := h.svc.Rename(r.Context(), r.PathValue("id"), auth.UserID(r.Context()), req.Title); err != nil {
 		writeMusicError(w, r, err)
 		return
 	}

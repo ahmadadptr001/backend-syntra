@@ -304,6 +304,8 @@ func NewRouter(d Deps) http.Handler {
 		protected(http.HandlerFunc(d.Music.Search)))
 	mux.Handle("DELETE /api/v1/music/{id}",
 		protected(http.HandlerFunc(d.Music.Delete)))
+	mux.Handle("PATCH /api/v1/music/{id}",
+		protected(http.HandlerFunc(d.Music.UpdateTitle)))
 
 	// --- notifikasi ---
 	//

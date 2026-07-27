@@ -113,6 +113,19 @@ func (r *MusicRepository) Delete(ctx context.Context, trackID, userID string) er
 	return nil
 }
 
+// UpdateTitle memanggil update_music_track_title (pemilik saja).
+func (r *MusicRepository) UpdateTitle(ctx context.Context, trackID, userID, title string) error {
+	actor, err := actorOption(ctx, userID)
+	if err != nil {
+		return err
+	}
+	args := map[string]any{"p_id": trackID, "p_title": title}
+	if err := r.client.RPC(ctx, "update_music_track_title", args, nil, actor); err != nil {
+		return translateMusic(err)
+	}
+	return nil
+}
+
 func musicToDomain(rows []musicRow) []music.Track {
 	out := make([]music.Track, 0, len(rows))
 	for _, row := range rows {

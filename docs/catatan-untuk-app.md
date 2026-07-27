@@ -7,6 +7,29 @@ pencarian, dan menu — semuanya dalam tema gelap `#121212` dengan font **Ralewa
 
 ---
 
+## 🎵 Edit judul lagu komunitas — PATCH /api/v1/music/{id} (2026-07-27)
+
+Menyusul `DELETE /api/v1/music/{id}`, sekarang pemilik lagu bisa **mengubah judul**
+lagunya sendiri.
+
+| Verb & path | Body | Balasan | Aturan |
+|---|---|---|---|
+| `PATCH /api/v1/music/{id}` | `{"title":"Judul baru"}` | `204 No Content` | pemilik saja; judul non-kosong, ≤200 char |
+
+- **403** kalau lagu bukan milik pemanggil / tak ada (sama seperti delete).
+- **400** kalau judul kosong / >200 char.
+- Hanya kolom `title` yang berubah — media, cover, visibility tak tersentuh.
+
+**Ada migrasi:** `20260727000059_music_update_title.sql` — menambah fungsi
+`update_music_track_title(uuid, text)` (SECURITY DEFINER, cek `author_id = require_auth()`).
+Jalankan migrasi ini di server sebelum fitur aktif. (Nomor mulai 59; 58 ke belakang
+sudah ada di mesin lain.)
+
+App memakainya di menu tekan-lama lagu komunitas (Ubah cover / Edit judul / Hapus) —
+"Edit judul" hanya tampil untuk lagu milik sendiri.
+
+---
+
 ## 🟢 Feed global: room.created + reel.new/deleted (2026-07-24, ronde 8)
 
 Sisa event realtime dari poin 11 sudah beres — **cakupan realtime kini lengkap**.

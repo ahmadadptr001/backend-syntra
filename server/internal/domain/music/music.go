@@ -9,6 +9,7 @@ package music
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/ahmadadptr001/backend-syntra/internal/pkg/id"
@@ -68,6 +69,7 @@ type Repository interface {
 	Feed(ctx context.Context, userID string, limit int) ([]Track, error)
 	Search(ctx context.Context, userID, query string, limit int) ([]Track, error)
 	Delete(ctx context.Context, trackID, userID string) error
+	UpdateTitle(ctx context.Context, trackID, userID, title string) error
 }
 
 // Publisher adalah port siaran realtime (opsional). Domain hanya menyatakan
@@ -154,6 +156,19 @@ func (s *Service) Delete(ctx context.Context, trackID, userID string) error {
 		return ErrInvalidInput
 	}
 	return s.repo.Delete(ctx, trackID, userID)
+}
+
+// Rename mengubah judul lagu milik pemanggil. Judul dikosongkan/terlalu panjang
+// ditolak; kepemilikan dijaga di lapisan SQL.
+func (s *Service) Rename(ctx context.Context, trackID, userID, title string) error {
+	if trackID == "" || userID == "" {
+		return ErrInvalidInput
+	}
+	title = strings.TrimSpace(title)
+	if title == "" || len(title) > MaxTitle {
+		return ErrInvalidInput
+	}
+	return s.repo.UpdateTitle(ctx, trackID, userID, title)
 }
 
 func clampFeed(limit int) int {
