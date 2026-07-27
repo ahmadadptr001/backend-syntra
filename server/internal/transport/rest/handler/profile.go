@@ -19,6 +19,7 @@ type ProfileService interface {
 	Block(ctx context.Context, username string) error
 	Unblock(ctx context.Context, username string) error
 	ListBlocked(ctx context.Context) ([]account.BlockedUser, error)
+	ListBlockedBy(ctx context.Context) ([]account.BlockedUser, error)
 	RegisterDevice(ctx context.Context, deviceID, platform, pushToken, appVersion string) error
 	RevokeDevice(ctx context.Context, deviceID string) error
 	Report(ctx context.Context, targetType, targetID, reason, detail string) error
@@ -160,6 +161,21 @@ func (h *Profile) Unblock(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.NoContent(w)
+}
+
+// ListBlockedBy menangani GET /api/v1/users/me/blocked-by.
+func (h *Profile) ListBlockedBy(w http.ResponseWriter, r *http.Request) {
+	list, err := h.svc.ListBlockedBy(r.Context())
+	if err != nil {
+		writeProfileError(w, r, err)
+		return
+	}
+
+	items := make([]blockedDTO, 0, len(list))
+	for _, b := range list {
+		items = append(items, blockedDTO{UserID: b.UserID, Username: b.Username})
+	}
+	httpx.Page(w, items, pageMeta{Count: len(items)})
 }
 
 // ListBlocked menangani GET /api/v1/users/me/blocked.

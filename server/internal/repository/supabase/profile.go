@@ -158,7 +158,15 @@ func (r *ProfileRepository) UpdateMyProfile(ctx context.Context, in account.Upda
 	return nil
 }
 
-// FindID menukar username menjadi id lewat fungsi find_user.
+// FindID menukar username menjadi id lewat fungsi resolve_username.
+//
+// SENGAJA BUKAN find_user. find_user menghormati blokir — ia mengembalikan nol baris
+// bila ada blokir di antara kedua pihak, yang benar untuk pencarian. Tetapi FindID juga
+// dipakai oleh Block/Unblock, sehingga memakai find_user membuat orang yang sudah
+// diblokir mustahil dibuka blokirnya: idnya tidak bisa lagi diterjemahkan.
+//
+// resolve_username hanya memetakan username → id dan tidak mengembalikan data profil
+// apa pun, jadi ia tidak membocorkan sesuatu yang belum dipegang pemanggil.
 func (r *ProfileRepository) FindID(ctx context.Context, username string) (string, error) {
 	actor, err := callerOption(ctx)
 	if err != nil {
@@ -168,7 +176,7 @@ func (r *ProfileRepository) FindID(ctx context.Context, username string) (string
 	var rows []struct {
 		ID string `json:"id"`
 	}
-	if err := r.client.RPC(ctx, "find_user",
+	if err := r.client.RPC(ctx, "resolve_username",
 		map[string]any{"p_username": username}, &rows, actor); err != nil {
 		return "", translateProfile(err)
 	}
@@ -193,6 +201,29 @@ type blockedRow struct {
 	Username    string `json:"username"`
 	DisplayName string `json:"display_name"`
 	AvatarKey   string `json:"avatar_key"`
+}
+
+// ListBlockedBy memanggil fungsi list_blocked_by: siapa yang memblokir SAYA.
+//
+// Sengaja mengembalikan account.BlockedUser yang sama walau hanya id dan username yang
+// terisi — sisi klien memakainya semata untuk menyembunyikan orang, bukan menampilkan
+// profilnya, jadi tidak ada alasan mengirim nama tampilan atau foto.
+func (r *ProfileRepository) ListBlockedBy(ctx context.Context) ([]account.BlockedUser, error) {
+	actor, err := callerOption(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var rows []blockedRow
+	if err := r.client.RPC(ctx, "list_blocked_by", map[string]any{}, &rows, actor); err != nil {
+		return nil, translateProfile(err)
+	}
+
+	out := make([]account.BlockedUser, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, account.BlockedUser{UserID: row.UserID, Username: row.Username})
+	}
+	return out, nil
 }
 
 // ListBlocked memanggil fungsi list_blocked.

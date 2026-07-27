@@ -81,6 +81,7 @@ type ProfileStore interface {
 	BlockUser(ctx context.Context, targetID string) error
 	UnblockUser(ctx context.Context, targetID string) error
 	ListBlocked(ctx context.Context) ([]BlockedUser, error)
+	ListBlockedBy(ctx context.Context) ([]BlockedUser, error)
 
 	RegisterDevice(ctx context.Context, deviceID, platform, pushToken, appVersion string) error
 	RevokeDevice(ctx context.Context, deviceID string) error
@@ -111,6 +112,30 @@ type UserUpdatedEvent struct {
 	UserID      string `json:"user_id"`
 	DisplayName string `json:"display_name"`
 	AvatarURL   string `json:"avatar_url,omitempty"`
+}
+
+// EventBlocked / EventUnblocked dikirim ke topik pengguna yang DIBLOKIR, bukan yang
+// memblokir.
+//
+// Sebelumnya blokir hanya terasa di sisi pemblokir: sisi lawan tetap melihat profil,
+// story, reels, dan tombol telepon seperti biasa sampai ia menutup dan membuka aplikasi
+// lagi — kalau server menolak permintaannya pun, yang tampak hanyalah "gagal", bukan
+// "kamu diblokir". Server sudah menolak lewat find_user/send_message; siaran ini yang
+// membuat tampilannya ikut berubah saat itu juga, tanpa refresh.
+//
+// Payload sengaja minimal: cukup id + username pemblokir supaya klien tahu baris/layar
+// mana yang harus berubah. Tidak ada alasan, waktu, atau data profil apa pun.
+const (
+	EventBlocked   = "user.blocked"
+	EventUnblocked = "user.unblocked"
+)
+
+// BlockEvent memberi tahu penerima siapa yang memblokir (atau membuka blokir) dirinya.
+type BlockEvent struct {
+	// ActorID adalah pihak yang melakukan blokir — dari sudut pandang penerima,
+	// inilah orang yang harus disembunyikan.
+	ActorID       string `json:"actor_id"`
+	ActorUsername string `json:"actor_username,omitempty"`
 }
 
 // ProfileService memuat alur bisnis profil dan sekitarnya.
@@ -212,7 +237,11 @@ func (s *ProfileService) Block(ctx context.Context, username string) error {
 	if err != nil {
 		return err
 	}
-	return s.store.BlockUser(ctx, targetID)
+	if err := s.store.BlockUser(ctx, targetID); err != nil {
+		return err
+	}
+	s.broadcastBlock(ctx, targetID, EventBlocked)
+	return nil
 }
 
 // Unblock membatalkan blokir.
@@ -221,7 +250,37 @@ func (s *ProfileService) Unblock(ctx context.Context, username string) error {
 	if err != nil {
 		return err
 	}
-	return s.store.UnblockUser(ctx, targetID)
+	if err := s.store.UnblockUser(ctx, targetID); err != nil {
+		return err
+	}
+	s.broadcastBlock(ctx, targetID, EventUnblocked)
+	return nil
+}
+
+// broadcastBlock mengabari pihak yang diblokir/dibuka blokirnya, seketika.
+//
+// Dikirim ke topik MILIK TARGET, karena dialah yang tampilannya harus berubah: chat
+// terkunci, profil jadi dinding, story/reels/room hilang, tombol telepon lenyap — tanpa
+// perlu menutup aplikasi. Best effort, persis seperti broadcastUpdated: blokirnya sudah
+// tersimpan dan berlaku di server; gagal menyiarkan hanya berarti sisi lawan baru tahu
+// pada sinkronisasi berikutnya, bukan bahwa blokirnya batal.
+func (s *ProfileService) broadcastBlock(ctx context.Context, targetID, event string) {
+	if s.pub == nil || targetID == "" {
+		return
+	}
+	me, err := s.store.GetMyProfile(ctx)
+	if err != nil {
+		return
+	}
+	_ = s.pub.Publish(ctx, topic.User(targetID), event, BlockEvent{
+		ActorID:       me.ID,
+		ActorUsername: me.Username,
+	})
+}
+
+// ListBlockedBy mengembalikan siapa saja yang memblokir pemanggil.
+func (s *ProfileService) ListBlockedBy(ctx context.Context) ([]BlockedUser, error) {
+	return s.store.ListBlockedBy(ctx)
 }
 
 // ListBlocked mengembalikan daftar yang diblokir.
