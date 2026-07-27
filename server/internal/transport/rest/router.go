@@ -250,6 +250,10 @@ func NewRouter(d Deps) http.Handler {
 		protected(http.HandlerFunc(d.Call.Start)))
 	mux.Handle("POST /api/v1/calls/{id}/answer",
 		protected(http.HandlerFunc(d.Call.Answer)))
+	mux.Handle("POST /api/v1/calls/{id}/invite",
+		protected(http.HandlerFunc(d.Call.Invite)))
+	mux.Handle("GET /api/v1/calls/{id}/participants",
+		protected(http.HandlerFunc(d.Call.Participants)))
 	mux.Handle("POST /api/v1/calls/{id}/decline",
 		protected(http.HandlerFunc(d.Call.Decline)))
 	mux.Handle("POST /api/v1/calls/{id}/leave",

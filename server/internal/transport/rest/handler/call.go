@@ -20,6 +20,8 @@ type CallService interface {
 	Decline(ctx context.Context, callID, conversationID string) error
 	Leave(ctx context.Context, callID, conversationID string) error
 	Active(ctx context.Context, conversationID string) (*call.Active, error)
+	Invite(ctx context.Context, callID, targetID, conversationID, kind, inviterID string) error
+	Participants(ctx context.Context, callID string) ([]call.Participant, error)
 	HandleSFUWebhook(ctx context.Context, authHeader string, body []byte) error
 	SFUReady() bool
 }
@@ -80,6 +82,63 @@ func (h *Call) Answer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.OK(w, toCallSessionDTO(sess))
+}
+
+// Invite menangani POST /api/v1/calls/{id}/invite.
+//
+// Mengundang orang ke panggilan yang sedang berjalan — inilah yang membuat panggilan
+// bisa disambung sampai lima orang. Batasnya ditegakkan di database.
+func (h *Call) Invite(w http.ResponseWriter, r *http.Request) {
+	p, _ := auth.FromContext(r.Context())
+	var body struct {
+		TargetID string `json:"target_id"`
+		Kind     string `json:"kind"`
+	}
+	if err := httpx.DecodeJSON(w, r, &body); err != nil {
+		httpx.Fail(w, r, http.StatusBadRequest, httpx.CodeBadRequest, err.Error())
+		return
+	}
+	if body.TargetID == "" {
+		httpx.Fail(w, r, http.StatusBadRequest, httpx.CodeBadRequest, "target_id wajib diisi")
+		return
+	}
+	kind := body.Kind
+	if kind == "" {
+		kind = "audio"
+	}
+	err := h.svc.Invite(
+		r.Context(), r.PathValue("id"), body.TargetID,
+		r.URL.Query().Get("conversation_id"), kind, p.UserID,
+	)
+	if err != nil {
+		writeCallError(w, r, err)
+		return
+	}
+	httpx.NoContent(w)
+}
+
+type callParticipantDTO struct {
+	UserID      string `json:"user_id"`
+	Username    string `json:"username"`
+	DisplayName string `json:"display_name"`
+	Joined      bool   `json:"joined"`
+}
+
+// Participants menangani GET /api/v1/calls/{id}/participants.
+func (h *Call) Participants(w http.ResponseWriter, r *http.Request) {
+	list, err := h.svc.Participants(r.Context(), r.PathValue("id"))
+	if err != nil {
+		writeCallError(w, r, err)
+		return
+	}
+	items := make([]callParticipantDTO, 0, len(list))
+	for _, c := range list {
+		items = append(items, callParticipantDTO{
+			UserID: c.UserID, Username: c.Username,
+			DisplayName: c.DisplayName, Joined: c.Joined,
+		})
+	}
+	httpx.Page(w, items, pageMeta{Count: len(items)})
 }
 
 // Decline menangani POST /api/v1/calls/{id}/decline.

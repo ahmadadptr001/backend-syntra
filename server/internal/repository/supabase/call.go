@@ -76,6 +76,47 @@ func (r *CallRepository) ExpireStale(ctx context.Context, conversationID string)
 	return nil
 }
 
+// Invite memanggil invite_to_call.
+func (r *CallRepository) Invite(ctx context.Context, callID, targetID string) error {
+	actor, err := callerOption(ctx)
+	if err != nil {
+		return err
+	}
+	args := map[string]any{"p_call": callID, "p_target": targetID}
+	if err := r.client.RPC(ctx, "invite_to_call", args, nil, actor); err != nil {
+		return translateCall(err)
+	}
+	return nil
+}
+
+type callParticipantRow struct {
+	UserID      string `json:"user_id"`
+	Username    string `json:"username"`
+	DisplayName string `json:"display_name"`
+	Joined      bool   `json:"joined"`
+}
+
+// Participants memanggil list_call_participants.
+func (r *CallRepository) Participants(ctx context.Context, callID string) ([]call.Participant, error) {
+	actor, err := callerOption(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var rows []callParticipantRow
+	if err := r.client.RPC(ctx, "list_call_participants",
+		map[string]any{"p_call": callID}, &rows, actor); err != nil {
+		return nil, translateCall(err)
+	}
+	out := make([]call.Participant, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, call.Participant{
+			UserID: row.UserID, Username: row.Username,
+			DisplayName: row.DisplayName, Joined: row.Joined,
+		})
+	}
+	return out, nil
+}
+
 // Answer memanggil fungsi answer_call.
 func (r *CallRepository) Answer(ctx context.Context, callID string) (string, error) {
 	actor, err := callerOption(ctx)

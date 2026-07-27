@@ -8,6 +8,7 @@
 package call
 
 import (
+	"github.com/ahmadadptr001/backend-syntra/internal/pkg/topic"
 	"context"
 	"errors"
 	"time"
@@ -83,6 +84,11 @@ type Repository interface {
 	// ke zombie dan benar-benar berdering.
 	ExpireStale(ctx context.Context, conversationID string) error
 	Answer(ctx context.Context, callID string) (sfuRoom string, err error)
+	// Invite menambahkan seseorang ke panggilan yang sedang berjalan. Batas peserta
+	// (5) ditegakkan di database, bukan di sini — dua undangan bersamaan tidak boleh
+	// bisa menembusnya, dan klien lama pun harus tetap terikat aturan yang sama.
+	Invite(ctx context.Context, callID, targetID string) error
+	Participants(ctx context.Context, callID string) ([]Participant, error)
 	Decline(ctx context.Context, callID string) error
 	Leave(ctx context.Context, callID string) error
 	GetActive(ctx context.Context, conversationID string) (*Active, error)
@@ -92,6 +98,15 @@ type Repository interface {
 	// mengembalikan nil kalau tidak ada panggilan aktif untuk room itu.
 	SFUParticipantLeft(ctx context.Context, sfuRoom, identity string) (*SFUResult, error)
 	SFURoomFinished(ctx context.Context, sfuRoom string) (*SFUResult, error)
+}
+
+// Participant adalah satu orang di dalam panggilan.
+type Participant struct {
+	UserID      string
+	Username    string
+	DisplayName string
+	// Joined false = sudah diundang tapi belum mengangkat (masih berdering).
+	Joined bool
 }
 
 // TokenIssuer menerbitkan kredensial SFU — sama dengan yang dipakai voice room.
@@ -305,6 +320,32 @@ func (s *Service) HandleSFUWebhook(ctx context.Context, authHeader string, body 
 		})
 	}
 	return nil
+}
+
+// Invite mengundang [targetID] ke panggilan yang sedang berjalan.
+//
+// Undangannya disiarkan ke topik PENGGUNA yang diundang, bukan ke topik percakapan:
+// orang itu belum tentu anggota percakapan tempat panggilan ini dimulai — justru itu
+// gunanya mengundang. Payload-nya sama persis dengan call.incoming biasa, jadi sisi
+// klien tidak perlu tahu bedanya antara "ditelepon" dan "diundang": keduanya berdering.
+func (s *Service) Invite(ctx context.Context, callID, targetID, conversationID, kind, inviterID string) error {
+	if err := s.repo.Invite(ctx, callID, targetID); err != nil {
+		return err
+	}
+	if s.notifier != nil {
+		_ = s.notifier.Publish(ctx, topic.User(targetID), EventIncoming, map[string]any{
+			"call_id":         callID,
+			"conversation_id": conversationID,
+			"initiator_id":    inviterID,
+			"kind":            kind,
+		})
+	}
+	return nil
+}
+
+// Participants mengembalikan siapa saja yang ada (atau sedang diundang) di panggilan.
+func (s *Service) Participants(ctx context.Context, callID string) ([]Participant, error) {
+	return s.repo.Participants(ctx, callID)
 }
 
 func (s *Service) notify(ctx context.Context, conversationID, event string, payload any) {
