@@ -33,7 +33,10 @@ var (
 // SQLSTATE yang dipakai fungsi database untuk melaporkan kegagalan domain.
 // Nilai ini harus sama persis dengan yang di-RAISE pada berkas migrasi.
 const (
-	sqlstateNotMember       = "42501" // insufficient_privilege
+	sqlstateNotMember = "42501" // insufficient_privilege
+	// Blokir. Terpisah dari 42501 dengan sengaja: orang yang diblokir TETAP
+	// anggota percakapan, jadi membalas "kamu bukan anggota" akan menyesatkan.
+	sqlstateBlocked         = "P0003"
 	sqlstateNotFound        = "P0002" // no_data_found
 	sqlstateInvalidData     = "22023" // invalid_parameter_value
 	sqlstateUniqueViolation = "23505" // unique_violation
@@ -716,6 +719,8 @@ func translate(err error) error {
 	}
 
 	switch {
+	case apiErr.Code == sqlstateBlocked:
+		return chat.ErrNotAllowed
 	case apiErr.Code == sqlstateNotMember, apiErr.IsDeniedByRLS():
 		return chat.ErrNotMember
 	case apiErr.Code == sqlstateNotFound, apiErr.IsNotFound():
