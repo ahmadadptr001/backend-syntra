@@ -395,10 +395,14 @@ func (s *Service) End(ctx context.Context, roomID string) error {
 		return err
 	}
 
-	s.notify(ctx, roomID, EventRoomEnded, map[string]any{
+	payload := map[string]any{
 		"room_id": roomID,
 		"reason":  "host_ended",
-	})
+	}
+	// Peserta di dalam room (room:{id}) supaya layar mereka menutup, DAN feed global
+	// (rooms:all) supaya kartu room langsung hilang dari daftar semua orang.
+	s.notify(ctx, roomID, EventRoomEnded, payload)
+	s.notifyRoomsFeed(ctx, EventRoomEnded, payload)
 	return nil
 }
 
@@ -457,12 +461,16 @@ func (s *Service) Leave(ctx context.Context, roomID string) error {
 	}
 
 	if ended {
-		// Tanpa siaran ini, peserta yang tersisa tetap menampilkan layar room
-		// dan mengira masih terhubung — padahal room-nya sudah ditutup.
-		s.notify(ctx, roomID, EventRoomEnded, map[string]any{
+		payload := map[string]any{
 			"room_id": roomID,
 			"reason":  "host_left",
-		})
+		}
+		// Tanpa siaran ini, peserta yang tersisa tetap menampilkan layar room
+		// dan mengira masih terhubung — padahal room-nya sudah ditutup.
+		s.notify(ctx, roomID, EventRoomEnded, payload)
+		// Dan ke feed global supaya kartu room hilang dari daftar semua orang seketika,
+		// bukan menunggu polling berikutnya.
+		s.notifyRoomsFeed(ctx, EventRoomEnded, payload)
 		return nil
 	}
 
@@ -513,6 +521,17 @@ func (s *Service) notify(ctx context.Context, roomID, event string, payload any)
 	}
 	// Kegagalan siaran tidak boleh membatalkan operasi yang sudah tersimpan.
 	_ = s.notifier.Publish(ctx, topicFor(roomID), event, payload)
+}
+
+// notifyRoomsFeed menyiarkan ke feed global rooms:all — dipakai untuk kejadian yang
+// harus mengubah DAFTAR room di perangkat SEMUA orang, bukan hanya peserta di dalam
+// room. Room yang berakhir perlu ini: tanpanya, kartu room hanya hilang lewat polling
+// (sampai ~15 detik) karena layar daftar hanya mendengarkan rooms:all, bukan room:{id}.
+func (s *Service) notifyRoomsFeed(ctx context.Context, event string, payload any) {
+	if s.notifier == nil {
+		return
+	}
+	_ = s.notifier.Publish(ctx, topic.RoomsFeed(), event, payload)
 }
 
 // notifyParticipants menyiarkan daftar peserta terbaru.
