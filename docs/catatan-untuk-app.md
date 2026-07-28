@@ -7,6 +7,24 @@ pencarian, dan menu — semuanya dalam tema gelap `#121212` dengan font **Ralewa
 
 ---
 
+## 🐛 Perbaikan: batas panjang edit komentar (migrasi 65) (2026-07-29)
+
+Bug di **edit komentar** (migrasi 64): `update_reel_comment` membatasi badan **2200**
+karakter — angka itu keliru terbawa dari batas KETERANGAN reel (migrasi 63). Padahal
+badan komentar dibatasi CHECK tabel `reel_comments_body_check` => **`<= 1000`** (sama
+seperti jalur MEMBUAT via `add_reel_comment`).
+
+Akibatnya: mengedit komentar jadi **1001–2200** karakter lolos cek fungsi, lalu ditolak
+CHECK tabel dengan **galat mentah Postgres (23514)** — bukan pesan ramah. Di app tampil
+"Gagal menyimpan" lalu teks dikembalikan.
+
+**Ada migrasi:** `20260728000065_fix_edit_comment_limit.sql` — `CREATE OR REPLACE`
+`update_reel_comment` dengan batas **1000** + pesan "komentar maksimal 1000 karakter".
+Aman dijalankan baik migrasi 64 sudah diterapkan maupun belum. Tak ada perubahan
+kontrak API — hanya batas & pesan galat yang diselaraskan.
+
+---
+
 ## 📷 Foto & tandai (@mention) di komentar Shorts (2026-07-28)
 
 Komentar reel kini bisa **berlampiran satu foto** dan **menandai orang** lewat @mention.
