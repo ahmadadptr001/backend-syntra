@@ -7,6 +7,29 @@ pencarian, dan menu — semuanya dalam tema gelap `#121212` dengan font **Ralewa
 
 ---
 
+## ❤️ Suka komentar Shorts — PUT/DELETE .../comments/{comment_id}/like (2026-07-28)
+
+Tiap **komentar reel** kini bisa disukai, seperti komentar TikTok/Instagram.
+
+| Verb & path | Balasan | Catatan |
+|---|---|---|
+| `PUT /api/v1/reels/{id}/comments/{comment_id}/like` | `204 No Content` | idempoten (suka ulang = no-op) |
+| `DELETE /api/v1/reels/{id}/comments/{comment_id}/like` | `204 No Content` | idempoten (batal suka) |
+| `GET /api/v1/reels/{id}/comments` | balasan tiap komentar kini memuat `liked` | + `like_count` yang sudah ada |
+
+- Menyukai komentar pada reel yang tak boleh dilihat pemanggil → **404** (lewat
+  `reel_visible_to`, sama seperti menyukai reel).
+- `like_count` didenormalisasi di `reel_comments` dan dijaga akurat (naik hanya saat
+  baris like benar-benar baru, turun hanya saat benar-benar terhapus, tak pernah < 0).
+
+**Ada migrasi:** `20260728000061_reel_comment_likes.sql` — menambah tabel
+`reel_comment_likes`, fungsi `like_reel_comment(uuid)` / `unlike_reel_comment(uuid)`,
+dan **me-recreate** `list_reel_comments` untuk menambah kolom `liked` (status suka
+pemanggil). Jalankan migrasi + deploy Go sebelum fitur aktif. App memakainya di sheet
+komentar Shorts (tombol hati per komentar, toggle optimistis).
+
+---
+
 ## 👥 Deskripsi grup — PATCH/GET /api/v1/conversations/{id} (2026-07-28)
 
 Grup kini punya **deskripsi** (teks bebas ≤500 char), setara title/avatar.

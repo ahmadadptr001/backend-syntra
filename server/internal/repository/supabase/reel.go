@@ -286,6 +286,7 @@ type reelCommentRow struct {
 	ReplyToBody     *string   `json:"reply_to_body"`
 	Body            string    `json:"body"`
 	LikeCount       int       `json:"like_count"`
+	Liked           *bool     `json:"liked"`
 	CreatedAt       time.Time `json:"created_at"`
 }
 
@@ -372,6 +373,7 @@ func (r *ReelRepository) ListComments(ctx context.Context, reelID, userID string
 			ReplyToBody:     deref(row.ReplyToBody),
 			Body:            row.Body,
 			LikeCount:       row.LikeCount,
+			Liked:           row.Liked != nil && *row.Liked,
 			CreatedAt:       row.CreatedAt,
 		})
 	}
@@ -391,6 +393,16 @@ func (r *ReelRepository) ListComments(ctx context.Context, reelID, userID string
 // DeleteComment memanggil delete_reel_comment.
 func (r *ReelRepository) DeleteComment(ctx context.Context, commentID, userID string) error {
 	return r.void(ctx, userID, "delete_reel_comment", map[string]any{"p_comment": commentID})
+}
+
+// LikeComment memanggil like_reel_comment.
+func (r *ReelRepository) LikeComment(ctx context.Context, commentID, userID string) error {
+	return r.void(ctx, userID, "like_reel_comment", map[string]any{"p_comment": commentID})
+}
+
+// UnlikeComment memanggil unlike_reel_comment.
+func (r *ReelRepository) UnlikeComment(ctx context.Context, commentID, userID string) error {
+	return r.void(ctx, userID, "unlike_reel_comment", map[string]any{"p_comment": commentID})
 }
 
 func (r *ReelRepository) void(ctx context.Context, userID, fn string, args map[string]any) error {

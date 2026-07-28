@@ -30,6 +30,8 @@ type ReelService interface {
 	AddComment(ctx context.Context, reelID, userID, body, parentID, replyToID string) (reel.Comment, error)
 	ListComments(ctx context.Context, reelID, userID string, before reel.Cursor, limit int) ([]reel.Comment, error)
 	DeleteComment(ctx context.Context, commentID, userID string) error
+	LikeComment(ctx context.Context, commentID, userID string) error
+	UnlikeComment(ctx context.Context, commentID, userID string) error
 }
 
 // Reel menangani endpoint reels / shorts.
@@ -308,6 +310,7 @@ type reelCommentDTO struct {
 	ReplyToBody     string    `json:"reply_to_body,omitempty"`
 	Body            string    `json:"body"`
 	LikeCount       int       `json:"like_count"`
+	Liked           bool      `json:"liked"`
 	CreatedAt       time.Time `json:"created_at"`
 }
 
@@ -327,6 +330,7 @@ func (h *Reel) toReelCommentDTO(c reel.Comment) reelCommentDTO {
 		ReplyToBody:     c.ReplyToBody,
 		Body:            c.Body,
 		LikeCount:       c.LikeCount,
+		Liked:           c.Liked,
 		CreatedAt:       c.CreatedAt,
 	}
 }
@@ -387,6 +391,24 @@ func (h *Reel) ListComments(w http.ResponseWriter, r *http.Request) {
 // DeleteComment menangani DELETE /api/v1/reels/comments/{comment_id}.
 func (h *Reel) DeleteComment(w http.ResponseWriter, r *http.Request) {
 	if err := h.svc.DeleteComment(r.Context(), r.PathValue("comment_id"), auth.UserID(r.Context())); err != nil {
+		writeReelError(w, r, err)
+		return
+	}
+	httpx.NoContent(w)
+}
+
+// LikeComment menangani PUT /api/v1/reels/{id}/comments/{comment_id}/like.
+func (h *Reel) LikeComment(w http.ResponseWriter, r *http.Request) {
+	if err := h.svc.LikeComment(r.Context(), r.PathValue("comment_id"), auth.UserID(r.Context())); err != nil {
+		writeReelError(w, r, err)
+		return
+	}
+	httpx.NoContent(w)
+}
+
+// UnlikeComment menangani DELETE /api/v1/reels/{id}/comments/{comment_id}/like.
+func (h *Reel) UnlikeComment(w http.ResponseWriter, r *http.Request) {
+	if err := h.svc.UnlikeComment(r.Context(), r.PathValue("comment_id"), auth.UserID(r.Context())); err != nil {
 		writeReelError(w, r, err)
 		return
 	}

@@ -98,7 +98,9 @@ type Comment struct {
 	ReplyToBody     string
 	Body            string
 	LikeCount       int
-	CreatedAt       time.Time
+	// Liked menandai apakah PEMANGGIL sudah menyukai komentar ini (diisi saat list).
+	Liked     bool
+	CreatedAt time.Time
 }
 
 // Cursor gabungan waktu + id untuk paginasi yang stabil. Dua reel bisa terbit
@@ -143,6 +145,8 @@ type Repository interface {
 	CommentAuthor(ctx context.Context, commentID string) (string, error)
 	ListComments(ctx context.Context, reelID, userID string, before Cursor, limit int) ([]Comment, error)
 	DeleteComment(ctx context.Context, commentID, userID string) error
+	LikeComment(ctx context.Context, commentID, userID string) error
+	UnlikeComment(ctx context.Context, commentID, userID string) error
 }
 
 // CommentNotifier memberi tahu seseorang bahwa komentarnya dibalas. Interface,
@@ -402,6 +406,16 @@ func (s *Service) DeleteComment(ctx context.Context, commentID, userID string) e
 		return ErrInvalidInput
 	}
 	return s.repo.DeleteComment(ctx, commentID, userID)
+}
+
+// LikeComment menyukai sebuah komentar (idempoten).
+func (s *Service) LikeComment(ctx context.Context, commentID, userID string) error {
+	return s.mustIDs(commentID, userID, func() error { return s.repo.LikeComment(ctx, commentID, userID) })
+}
+
+// UnlikeComment membatalkan suka pada komentar (idempoten).
+func (s *Service) UnlikeComment(ctx context.Context, commentID, userID string) error {
+	return s.mustIDs(commentID, userID, func() error { return s.repo.UnlikeComment(ctx, commentID, userID) })
 }
 
 func (s *Service) mustIDs(reelID, userID string, fn func() error) error {
