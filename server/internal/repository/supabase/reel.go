@@ -248,6 +248,26 @@ func (r *ReelRepository) Delete(ctx context.Context, reelID, userID string) erro
 	return r.void(ctx, userID, "delete_reel", map[string]any{"p_reel": reelID})
 }
 
+// Update memanggil update_reel (pemilik saja).
+//
+// Argumen yang tidak diminta sengaja TIDAK disertakan sama sekali: PostgREST lalu
+// memakai DEFAULT NULL milik fungsinya, yang di dalam SQL berarti "jangan sentuh
+// kolom ini". Mengirimkannya sebagai null eksplisit akan bekerja sama, tapi
+// membangun map-nya seperti ini membuat maksudnya terbaca di satu tempat.
+func (r *ReelRepository) Update(ctx context.Context, in reel.UpdateInput) error {
+	args := map[string]any{"p_id": in.ReelID}
+	if in.Caption != nil {
+		args["p_caption"] = *in.Caption
+	}
+	if in.Visibility != nil {
+		args["p_vis"] = *in.Visibility
+	}
+	if in.CommentsEnabled != nil {
+		args["p_comments"] = *in.CommentsEnabled
+	}
+	return r.void(ctx, in.UserID, "update_reel", args)
+}
+
 // Like memanggil like_reel.
 func (r *ReelRepository) Like(ctx context.Context, reelID, userID string) error {
 	return r.void(ctx, userID, "like_reel", map[string]any{"p_reel": reelID})
@@ -287,9 +307,18 @@ type reelCommentRow struct {
 	Body            string    `json:"body"`
 	LikeCount       int       `json:"like_count"`
 	Liked           *bool     `json:"liked"`
-	MediaID         *string   `json:"media_id"`
-	MediaKind       *string   `json:"media_kind"`
-	CreatedAt       time.Time `json:"created_at"`
+	MediaID         *string    `json:"media_id"`
+	MediaKind       *string    `json:"media_kind"`
+	CreatedAt       time.Time  `json:"created_at"`
+	EditedAt        *time.Time `json:"edited_at"`
+}
+
+// UpdateComment memanggil update_reel_comment (penulisnya saja).
+func (r *ReelRepository) UpdateComment(ctx context.Context, commentID, userID, body string) error {
+	return r.void(ctx, userID, "update_reel_comment", map[string]any{
+		"p_comment": commentID,
+		"p_body":    body,
+	})
 }
 
 // AddComment memanggil add_reel_comment.
@@ -385,6 +414,7 @@ func (r *ReelRepository) ListComments(ctx context.Context, reelID, userID string
 			MediaID:         deref(row.MediaID),
 			MediaKind:       deref(row.MediaKind),
 			CreatedAt:       row.CreatedAt,
+			EditedAt:        row.EditedAt,
 		})
 	}
 	// Resolve avatar DAN media komentar (media id → storage key) dalam satu batch,

@@ -22,6 +22,7 @@ type ReelService interface {
 	ListByUser(ctx context.Context, username, userID string, before reel.Cursor, limit int) ([]reel.Reel, error)
 	ListSaved(ctx context.Context, userID string, before reel.Cursor, limit int) ([]reel.Reel, error)
 	Delete(ctx context.Context, reelID, userID string) error
+	Update(ctx context.Context, in reel.UpdateInput) error
 	Like(ctx context.Context, reelID, userID string) error
 	Unlike(ctx context.Context, reelID, userID string) error
 	Save(ctx context.Context, reelID, userID string) error
@@ -30,6 +31,7 @@ type ReelService interface {
 	AddComment(ctx context.Context, reelID, userID, body, parentID, replyToID, mediaID string) (reel.Comment, error)
 	ListComments(ctx context.Context, reelID, userID string, before reel.Cursor, limit int) ([]reel.Comment, error)
 	DeleteComment(ctx context.Context, commentID, userID string) error
+	UpdateComment(ctx context.Context, commentID, userID, body string) error
 	LikeComment(ctx context.Context, commentID, userID string) error
 	UnlikeComment(ctx context.Context, commentID, userID string) error
 }
@@ -248,6 +250,37 @@ func (h *Reel) Delete(w http.ResponseWriter, r *http.Request) {
 	httpx.NoContent(w)
 }
 
+// updateReelRequest memakai pointer supaya field yang TIDAK ada di JSON tetap nil.
+// Itu bedanya "jangan ubah keterangannya" dari "kosongkan keterangannya", dan
+// bedanya "biarkan visibility apa adanya" dari sebuah nilai nol yang tak pernah
+// dimaksudkan.
+type updateReelRequest struct {
+	Caption         *string `json:"caption"`
+	Visibility      *string `json:"visibility"`
+	CommentsEnabled *bool   `json:"comments_enabled"`
+}
+
+// Update menangani PATCH /api/v1/reels/{id} — edit reel milik sendiri.
+func (h *Reel) Update(w http.ResponseWriter, r *http.Request) {
+	var req updateReelRequest
+	if err := httpx.DecodeJSON(w, r, &req); err != nil {
+		httpx.Fail(w, r, http.StatusBadRequest, httpx.CodeBadRequest, err.Error())
+		return
+	}
+	err := h.svc.Update(r.Context(), reel.UpdateInput{
+		ReelID:          r.PathValue("id"),
+		UserID:          auth.UserID(r.Context()),
+		Caption:         req.Caption,
+		Visibility:      req.Visibility,
+		CommentsEnabled: req.CommentsEnabled,
+	})
+	if err != nil {
+		writeReelError(w, r, err)
+		return
+	}
+	httpx.NoContent(w)
+}
+
 // Like menangani PUT /api/v1/reels/{id}/like.
 func (h *Reel) Like(w http.ResponseWriter, r *http.Request) {
 	if err := h.svc.Like(r.Context(), r.PathValue("id"), auth.UserID(r.Context())); err != nil {
@@ -315,6 +348,8 @@ type reelCommentDTO struct {
 	MediaURL  string    `json:"media_url,omitempty"`
 	MediaKind string    `json:"media_kind,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
+	// Terisi hanya kalau komentar pernah diubah — klien menandainya "diedit".
+	EditedAt *time.Time `json:"edited_at,omitempty"`
 }
 
 // Method (bukan free func) supaya bisa menyusun URL avatar penulis lewat
@@ -337,6 +372,7 @@ func (h *Reel) toReelCommentDTO(c reel.Comment) reelCommentDTO {
 		MediaURL:        commentMediaURL(h, c.MediaID),
 		MediaKind:       c.MediaKind,
 		CreatedAt:       c.CreatedAt,
+		EditedAt:        c.EditedAt,
 	}
 }
 
@@ -405,6 +441,25 @@ func (h *Reel) ListComments(w http.ResponseWriter, r *http.Request) {
 }
 
 // DeleteComment menangani DELETE /api/v1/reels/comments/{comment_id}.
+type updateCommentRequest struct {
+	Body string `json:"body"`
+}
+
+// UpdateComment menangani PATCH /api/v1/reels/{id}/comments/{comment_id}.
+func (h *Reel) UpdateComment(w http.ResponseWriter, r *http.Request) {
+	var req updateCommentRequest
+	if err := httpx.DecodeJSON(w, r, &req); err != nil {
+		httpx.Fail(w, r, http.StatusBadRequest, httpx.CodeBadRequest, err.Error())
+		return
+	}
+	err := h.svc.UpdateComment(r.Context(), r.PathValue("comment_id"), auth.UserID(r.Context()), req.Body)
+	if err != nil {
+		writeReelError(w, r, err)
+		return
+	}
+	httpx.NoContent(w)
+}
+
 func (h *Reel) DeleteComment(w http.ResponseWriter, r *http.Request) {
 	if err := h.svc.DeleteComment(r.Context(), r.PathValue("comment_id"), auth.UserID(r.Context())); err != nil {
 		writeReelError(w, r, err)

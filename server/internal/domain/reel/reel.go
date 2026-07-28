@@ -106,6 +106,11 @@ type Comment struct {
 	MediaID   string
 	MediaKind string
 	CreatedAt time.Time
+	// EditedAt terisi kalau komentar ini pernah diubah setelah dikirim. Ikut
+	// keluar ke klien supaya penanda "diedit" bisa ditampilkan: komentar yang
+	// berubah diam-diam setelah dibalas adalah cara mengubah arti percakapan
+	// orang lain secara surut.
+	EditedAt *time.Time
 }
 
 // Cursor gabungan waktu + id untuk paginasi yang stabil. Dua reel bisa terbit
@@ -129,6 +134,20 @@ type CreateInput struct {
 }
 
 // Repository adalah port penyimpanan.
+// UpdateInput adalah perubahan yang diminta pada sebuah reel.
+//
+// Tiap field adalah POINTER dengan sengaja: nil berarti "jangan sentuh", berbeda
+// dari nilai kosong yang berarti "kosongkan". Tanpa pembedaan itu, sebuah PATCH
+// yang hanya membawa caption akan ikut menulis ulang visibility ke nilai nol —
+// artinya memperbaiki satu huruf pada reel privat diam-diam menerbitkannya.
+type UpdateInput struct {
+	ReelID          string
+	UserID          string
+	Caption         *string
+	Visibility      *string
+	CommentsEnabled *bool
+}
+
 type Repository interface {
 	Create(ctx context.Context, r Reel) error
 	Feed(ctx context.Context, userID string, before Cursor, limit int) ([]Reel, error)
@@ -137,6 +156,7 @@ type Repository interface {
 	ListByUser(ctx context.Context, username, userID string, before Cursor, limit int) ([]Reel, error)
 	ListSaved(ctx context.Context, userID string, before Cursor, limit int) ([]Reel, error)
 	Delete(ctx context.Context, reelID, userID string) error
+	Update(ctx context.Context, in UpdateInput) error
 
 	Like(ctx context.Context, reelID, userID string) error
 	Unlike(ctx context.Context, reelID, userID string) error
@@ -145,6 +165,7 @@ type Repository interface {
 	RecordView(ctx context.Context, reelID, userID string) error
 
 	AddComment(ctx context.Context, c Comment) error
+	UpdateComment(ctx context.Context, commentID, userID, body string) error
 	// CommentAuthor mengembalikan id penulis sebuah komentar (untuk notifikasi
 	// balasan). String kosong kalau tidak ada.
 	CommentAuthor(ctx context.Context, commentID string) (string, error)
@@ -281,6 +302,27 @@ func (s *Service) ListSaved(ctx context.Context, userID string, before Cursor, l
 }
 
 // Delete menghapus reel milik pemanggil (soft delete).
+// Update mengubah keterangan / visibility / izin komentar sebuah reel milik
+// sendiri. Kepemilikan ditegakkan di database, bukan di sini.
+func (s *Service) Update(ctx context.Context, in UpdateInput) error {
+	if in.ReelID == "" || in.UserID == "" {
+		return ErrInvalidInput
+	}
+	// Sebuah PATCH yang tidak membawa apa pun adalah permintaan yang salah, bukan
+	// no-op yang sukses — kalau dibiarkan, klien yang mengirim nama field keliru
+	// akan mendapat 204 dan mengira perubahannya tersimpan.
+	if in.Caption == nil && in.Visibility == nil && in.CommentsEnabled == nil {
+		return ErrInvalidInput
+	}
+	if in.Caption != nil && len([]rune(*in.Caption)) > 2200 {
+		return ErrInvalidInput
+	}
+	if in.Visibility != nil && !Visibility(*in.Visibility).Valid() {
+		return ErrInvalidInput
+	}
+	return s.repo.Update(ctx, in)
+}
+
 func (s *Service) Delete(ctx context.Context, reelID, userID string) error {
 	if reelID == "" || userID == "" {
 		return ErrInvalidInput
@@ -422,6 +464,20 @@ func (s *Service) ListComments(ctx context.Context, reelID, userID string, befor
 }
 
 // DeleteComment menghapus komentar (penulis komentar atau pemilik reel).
+// UpdateComment mengubah badan komentar milik sendiri. Badan boleh kosong hanya
+// bila komentar itu punya lampiran — aturan yang sama seperti saat mengirim, dan
+// ditegakkan di database supaya edit tidak bisa dipakai untuk mengosongkan
+// komentar menjadi baris hantu.
+func (s *Service) UpdateComment(ctx context.Context, commentID, userID, body string) error {
+	if commentID == "" || userID == "" {
+		return ErrInvalidInput
+	}
+	if len([]rune(body)) > 2200 {
+		return ErrInvalidInput
+	}
+	return s.repo.UpdateComment(ctx, commentID, userID, body)
+}
+
 func (s *Service) DeleteComment(ctx context.Context, commentID, userID string) error {
 	if commentID == "" || userID == "" {
 		return ErrInvalidInput

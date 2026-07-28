@@ -277,6 +277,8 @@ func NewRouter(d Deps) http.Handler {
 		protected(http.HandlerFunc(d.Reel.Get)))
 	mux.Handle("DELETE /api/v1/reels/{id}",
 		protected(http.HandlerFunc(d.Reel.Delete)))
+	mux.Handle("PATCH /api/v1/reels/{id}",
+		protected(http.HandlerFunc(d.Reel.Update)))
 	mux.Handle("PUT /api/v1/reels/{id}/like",
 		protected(http.HandlerFunc(d.Reel.Like)))
 	mux.Handle("DELETE /api/v1/reels/{id}/like",
@@ -291,6 +293,8 @@ func NewRouter(d Deps) http.Handler {
 		protected(http.HandlerFunc(d.Reel.ListComments)))
 	mux.Handle("POST /api/v1/reels/{id}/comments",
 		protected(http.HandlerFunc(d.Reel.AddComment)))
+	mux.Handle("PATCH /api/v1/reels/{id}/comments/{comment_id}",
+		protected(http.HandlerFunc(d.Reel.UpdateComment)))
 	mux.Handle("DELETE /api/v1/reels/{id}/comments/{comment_id}",
 		protected(http.HandlerFunc(d.Reel.DeleteComment)))
 	mux.Handle("PUT /api/v1/reels/{id}/comments/{comment_id}/like",

@@ -269,6 +269,7 @@ Seluruh baris di tabel ini **diverifikasi jalan** lewat `server/scripts/smoke.ps
 | `GET` | `/api/v1/reels/me` | ✅ |
 | `GET` | `/api/v1/reels/saved` | ✅ |
 | `GET` | `/api/v1/reels/{id}` | ✅ |
+| `PATCH` | `/api/v1/reels/{id}` | ✅ |
 | `DELETE` | `/api/v1/reels/{id}` | ✅ |
 | `PUT` | `/api/v1/reels/{id}/like` | ✅ |
 | `DELETE` | `/api/v1/reels/{id}/like` | ✅ |
@@ -277,6 +278,7 @@ Seluruh baris di tabel ini **diverifikasi jalan** lewat `server/scripts/smoke.ps
 | `POST` | `/api/v1/reels/{id}/view` | ✅ |
 | `GET` | `/api/v1/reels/{id}/comments` | ✅ |
 | `POST` | `/api/v1/reels/{id}/comments` | ✅ |
+| `PATCH` | `/api/v1/reels/{id}/comments/{comment_id}` | ✅ |
 | `DELETE` | `/api/v1/reels/{id}/comments/{comment_id}` | ✅ |
 | `PUT` | `/api/v1/reels/{id}/comments/{comment_id}/like` | ✅ |
 | `DELETE` | `/api/v1/reels/{id}/comments/{comment_id}/like` | ✅ |
@@ -1486,6 +1488,35 @@ yang bukan pemilik hanya melihat yang boleh ia lihat.
 
 Satu reel (deep-link/detail). `404` kalau tidak ada atau tidak boleh dilihat.
 
+### `PATCH /api/v1/reels/{id}`
+
+Mengedit short milik sendiri. Sampai sekarang reel hanya bisa dibuat dan dihapus,
+jadi salah ketik satu huruf berarti hapus lalu unggah ulang — dan tayangan, suka,
+serta komentarnya ikut hilang.
+
+```json
+{ "caption": "Keterangan baru", "visibility": "followers", "comments_enabled": false }
+```
+
+**Ketiganya opsional dan nullable, dan itu penting.** Field yang **tidak dikirim**
+= jangan diubah; `"caption": ""` = kosongkan keterangannya. Kalau app mengirim
+seluruh objek setiap kali, mengedit keterangan sebuah reel privat akan ikut
+menulis ulang `visibility` — kirim hanya yang benar-benar berubah.
+
+- **400** kalau badan tidak membawa satu pun dari ketiganya (permintaan yang salah,
+  bukan no-op yang sukses — kalau dibiarkan, klien yang salah menulis nama field
+  akan dapat `204` dan mengira perubahannya tersimpan), keterangan >2200 char, atau
+  `visibility` di luar `public`/`followers`/`private`.
+- **403** kalau reel bukan milik pemanggil atau sudah tak ada. Sengaja tidak
+  dibedakan: membedakannya memberi tahu orang asing bahwa id itu memang ada.
+- Balasan `204`. Media tak pernah tersentuh — mengganti videonya bukan edit, itu
+  postingan lain.
+
+**Ada migrasi:** `20260728000063_update_reel.sql` — menambah fungsi
+`update_reel(uuid, text, text, boolean)` (SECURITY DEFINER, cek
+`author_id = require_auth()`, tiap argumen DEFAULT NULL = jangan sentuh kolomnya).
+Jalankan migrasi + deploy Go sebelum fitur aktif.
+
 ### `DELETE /api/v1/reels/{id}`
 
 Menghapus reel milik sendiri (soft delete). Bukan milik pemanggil → `403`.
@@ -1550,6 +1581,33 @@ Menyukai / batal menyukai **sebuah komentar**. Idempoten (suka ulang = no-op),
 
 Komentar pada reel yang tidak boleh dilihat pemanggil → `404` (aturan
 `reel_visible_to` yang sama dengan menyukai reel).
+
+### `PATCH /api/v1/reels/{id}/comments/{comment_id}`
+
+Mengubah badan komentar. **Penulisnya saja** — pemilik reel boleh menghapus
+komentar orang lain, tapi tidak boleh menulis ulang kata-katanya.
+
+```json
+{ "body": "teks yang sudah diperbaiki" }
+```
+
+- Badan boleh kosong **hanya** bila komentar itu punya lampiran — aturan yang
+  sama seperti saat mengirim. Tanpa itu, edit bisa dipakai untuk mengosongkan
+  komentar menjadi baris hantu yang tak bisa dihapus siapa pun. Kosong tanpa
+  media → `400`; >2200 char → `400`.
+- **403** kalau bukan milik pemanggil atau sudah tak ada.
+- Balasan `204`.
+
+**Jejaknya terlihat.** Setiap edit meng-set `reel_comments.edited_at`, dan
+`GET .../comments` membawanya keluar sebagai `edited_at` (tidak ada kalau belum
+pernah diedit). App menampilkan penanda kecil "diedit" di bawah komentar itu.
+Ini bukan hiasan: komentar yang bisa berubah diam-diam setelah dibalas adalah
+cara mengubah arti percakapan orang lain secara surut.
+
+**Ada migrasi:** `20260728000064_edit_reel_comment.sql` — menambah kolom
+`reel_comments.edited_at`, fungsi `update_reel_comment(uuid, text)`, dan
+me-recreate `list_reel_comments` (tambah `edited_at` di akhir; kolom lain tak
+berubah, jadi klien lama aman). Jalankan migrasi + deploy Go sebelum fitur aktif.
 
 ### `DELETE /api/v1/reels/{id}/comments/{comment_id}`
 
