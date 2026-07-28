@@ -287,6 +287,8 @@ type reelCommentRow struct {
 	Body            string    `json:"body"`
 	LikeCount       int       `json:"like_count"`
 	Liked           *bool     `json:"liked"`
+	MediaID         *string   `json:"media_id"`
+	MediaKind       *string   `json:"media_kind"`
 	CreatedAt       time.Time `json:"created_at"`
 }
 
@@ -302,13 +304,19 @@ func (r *ReelRepository) AddComment(ctx context.Context, c reel.Comment) error {
 		"p_body":       c.Body,
 		"p_parent":     nullIfEmpty(c.ParentCommentID),
 		"p_reply_to":   nullIfEmpty(c.ReplyToID),
+		"p_media":      nullIfEmpty(c.MediaID),
 		"p_created_at": c.CreatedAt.UTC(),
 	}
 	err = r.client.RPC(ctx, "add_reel_comment", args, nil, actor)
 	if err != nil && isMissingFunction(err) {
-		// Migrasi 44 (kutipan balasan) belum dijalankan: overload 6-argumen belum
-		// ada. Ulangi dengan bentuk 5-argumen lama supaya komentar tetap terkirim
-		// (kutipan reply_to hanya tidak tersimpan sampai migrasi dijalankan).
+		// Migrasi 62 (foto komentar) belum dijalankan: overload 7-argumen belum ada.
+		// Turun ke bentuk 6-argumen (kutipan balasan, migrasi 44) — foto tak tersimpan.
+		delete(args, "p_media")
+		err = r.client.RPC(ctx, "add_reel_comment", args, nil, actor)
+	}
+	if err != nil && isMissingFunction(err) {
+		// Migrasi 44 juga belum ada: turun ke bentuk 5-argumen paling lama supaya
+		// komentar teks tetap terkirim (kutipan reply_to belum tersimpan).
 		delete(args, "p_reply_to")
 		err = r.client.RPC(ctx, "add_reel_comment", args, nil, actor)
 	}
@@ -374,18 +382,26 @@ func (r *ReelRepository) ListComments(ctx context.Context, reelID, userID string
 			Body:            row.Body,
 			LikeCount:       row.LikeCount,
 			Liked:           row.Liked != nil && *row.Liked,
+			MediaID:         deref(row.MediaID),
+			MediaKind:       deref(row.MediaKind),
 			CreatedAt:       row.CreatedAt,
 		})
 	}
-	// Resolve avatar media ids → storage keys (sama seperti reel), supaya handler
-	// bisa menyusun URL foto profil penulis komentar.
-	ids := make([]string, 0, len(out))
+	// Resolve avatar DAN media komentar (media id → storage key) dalam satu batch,
+	// supaya handler bisa menyusun URL foto profil penulis maupun foto komentar.
+	ids := make([]string, 0, len(out)*2)
 	for _, c := range out {
 		ids = append(ids, c.AuthorAvatarID)
+		if c.MediaID != "" {
+			ids = append(ids, c.MediaID)
+		}
 	}
 	keys := r.avatarKeys(ctx, userID, ids)
 	for i := range out {
 		out[i].AuthorAvatarID = keys[out[i].AuthorAvatarID]
+		if out[i].MediaID != "" {
+			out[i].MediaID = keys[out[i].MediaID]
+		}
 	}
 	return out, nil
 }

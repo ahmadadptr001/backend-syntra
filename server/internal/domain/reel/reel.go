@@ -9,6 +9,7 @@ package reel
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/ahmadadptr001/backend-syntra/internal/pkg/id"
@@ -99,7 +100,11 @@ type Comment struct {
 	Body            string
 	LikeCount       int
 	// Liked menandai apakah PEMANGGIL sudah menyukai komentar ini (diisi saat list).
-	Liked     bool
+	Liked bool
+	// MediaID: lampiran gambar opsional. Saat input (AddComment) berisi media id
+	// yang diunggah; saat list, repo menimpanya dengan storage_key hasil resolve.
+	MediaID   string
+	MediaKind string
 	CreatedAt time.Time
 }
 
@@ -154,6 +159,10 @@ type Repository interface {
 // Diisi adapter di app.go. Nil = fitur notifikasi dimatikan (best effort).
 type CommentNotifier interface {
 	NotifyCommentReply(ctx context.Context, recipientID, actorID, reelID string) error
+	// NotifyMentions memberi tahu setiap @username yang disebut di badan komentar
+	// bahwa mereka ditandai untuk menonton reel ini. Parsing username, resolusi ke
+	// id, dan penyaringan diri-sendiri/blokir ditangani implementasi (app.go).
+	NotifyMentions(ctx context.Context, actorID, reelID, body string) error
 }
 
 // Service memuat alur bisnis reel.
@@ -337,12 +346,17 @@ func (s *Service) RecordView(ctx context.Context, reelID, userID string) error {
 	return s.mustIDs(reelID, userID, func() error { return s.repo.RecordView(ctx, reelID, userID) })
 }
 
-// AddComment menambah komentar pada reel.
-func (s *Service) AddComment(ctx context.Context, reelID, userID, body, parentID, replyToID string) (Comment, error) {
+// AddComment menambah komentar pada reel. mediaID opsional (lampiran gambar);
+// bila ada, badan boleh kosong.
+func (s *Service) AddComment(ctx context.Context, reelID, userID, body, parentID, replyToID, mediaID string) (Comment, error) {
 	if reelID == "" || userID == "" {
 		return Comment{}, ErrInvalidInput
 	}
-	if l := len(body); l == 0 || l > MaxCommentBody {
+	if len(body) > MaxCommentBody {
+		return Comment{}, ErrInvalidInput
+	}
+	// Kosong hanya boleh kalau ada media. Teks kosong tanpa media = ditolak.
+	if strings.TrimSpace(body) == "" && mediaID == "" {
 		return Comment{}, ErrInvalidInput
 	}
 	c := Comment{
@@ -351,6 +365,7 @@ func (s *Service) AddComment(ctx context.Context, reelID, userID, body, parentID
 		AuthorID:        userID,
 		ParentCommentID: parentID,
 		ReplyToID:       replyToID,
+		MediaID:         mediaID,
 		Body:            body,
 		CreatedAt:       time.Now().UTC(),
 	}
@@ -382,6 +397,12 @@ func (s *Service) AddComment(ctx context.Context, reelID, userID, body, parentID
 			// userID = pelaku (yang membalas); author = penerima (pemilik komentar).
 			_ = s.notifier.NotifyCommentReply(ctx, author, userID, reelID)
 		}
+	}
+
+	// Tandai (@mention) siapa pun yang disebut di badan komentar, supaya mereka
+	// dapat notifikasi + deeplink untuk menonton reel ini. Best effort.
+	if s.notifier != nil && strings.Contains(body, "@") {
+		_ = s.notifier.NotifyMentions(ctx, userID, reelID, body)
 	}
 	return c, nil
 }

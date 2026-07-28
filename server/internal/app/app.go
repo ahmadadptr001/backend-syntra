@@ -12,6 +12,8 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"regexp"
+	"strings"
 	"time"
 
 	goredis "github.com/redis/go-redis/v9"
@@ -118,7 +120,7 @@ func New(ctx context.Context, cfg *config.Config, log *slog.Logger) (*App, error
 	notifService := notification.NewService(notifRepo, ws.NewPublisher(hub), mediaService.PublicURL)
 	// Adapter: reel domain memberi tahu penulis komentar saat dibalas, tanpa
 	// bergantung langsung pada domain notification.
-	reelService := reel.NewService(reelRepo, ws.NewPublisher(hub), commentReplyNotifier{notif: notifService})
+	reelService := reel.NewService(reelRepo, ws.NewPublisher(hub), commentReplyNotifier{notif: notifService, resolver: profileRepo})
 	musicService := music.NewService(musicRepo, ws.NewPublisher(hub))
 	profileService := account.NewProfileService(profileRepo, profileRepo, ws.NewPublisher(hub), mediaService.PublicURL)
 
@@ -311,11 +313,24 @@ func newVerifier(cfg *config.Config, supa *supabase.Client, log *slog.Logger) au
 	)
 }
 
+// usernameResolver menukar @username menjadi id pengguna. profileRepo memenuhinya
+// lewat FindID (resolve_username). Interface lokal supaya adapter tak bergantung
+// pada tipe konkret repo.
+type usernameResolver interface {
+	FindID(ctx context.Context, username string) (string, error)
+}
+
+// mentionPattern menangkap @username di badan komentar. Username Syntra memakai
+// huruf/angka/underscore/titik; pola ini sengaja longgar dan sisa validasi
+// diserahkan ke resolve_username (username tak dikenal → dilewati).
+var mentionPattern = regexp.MustCompile(`@([A-Za-z0-9_.]{1,40})`)
+
 // commentReplyNotifier menjembatani reel.CommentNotifier ke domain notification,
 // supaya penulis komentar diberi tahu (in-app + realtime) saat komentarnya
 // dibalas. type=comment: penerima disaring (diri sendiri / blokir) di database.
 type commentReplyNotifier struct {
-	notif *notification.Service
+	notif    *notification.Service
+	resolver usernameResolver
 }
 
 func (c commentReplyNotifier) NotifyCommentReply(ctx context.Context, recipientID, actorID, reelID string) error {
@@ -326,4 +341,36 @@ func (c commentReplyNotifier) NotifyCommentReply(ctx context.Context, recipientI
 		SubjectType: "reel",
 		SubjectID:   reelID,
 	})
+}
+
+// NotifyMentions memberi tahu setiap @username yang disebut di badan komentar
+// bahwa mereka ditandai untuk menonton reel ini (type=mention, subjek=reel).
+//
+// Parsing di sini; resolusi username→id lewat resolver; penyaringan diri-sendiri
+// dan blokir dilakukan di database (create_notification). Semua best effort —
+// satu mention gagal tidak menggagalkan yang lain maupun komentarnya.
+func (c commentReplyNotifier) NotifyMentions(ctx context.Context, actorID, reelID, body string) error {
+	if c.resolver == nil {
+		return nil
+	}
+	seen := map[string]bool{}
+	for _, m := range mentionPattern.FindAllStringSubmatch(body, -1) {
+		uname := strings.ToLower(strings.Trim(m[1], "."))
+		if uname == "" || seen[uname] {
+			continue
+		}
+		seen[uname] = true
+		recipientID, err := c.resolver.FindID(ctx, uname)
+		if err != nil || recipientID == "" || recipientID == actorID {
+			continue
+		}
+		_ = c.notif.Notify(ctx, notification.NotifyInput{
+			RecipientID: recipientID,
+			ActorID:     actorID,
+			Type:        notification.TypeMention,
+			SubjectType: "reel",
+			SubjectID:   reelID,
+		})
+	}
+	return nil
 }

@@ -27,7 +27,7 @@ type ReelService interface {
 	Save(ctx context.Context, reelID, userID string) error
 	Unsave(ctx context.Context, reelID, userID string) error
 	RecordView(ctx context.Context, reelID, userID string) error
-	AddComment(ctx context.Context, reelID, userID, body, parentID, replyToID string) (reel.Comment, error)
+	AddComment(ctx context.Context, reelID, userID, body, parentID, replyToID, mediaID string) (reel.Comment, error)
 	ListComments(ctx context.Context, reelID, userID string, before reel.Cursor, limit int) ([]reel.Comment, error)
 	DeleteComment(ctx context.Context, commentID, userID string) error
 	LikeComment(ctx context.Context, commentID, userID string) error
@@ -311,7 +311,10 @@ type reelCommentDTO struct {
 	Body            string    `json:"body"`
 	LikeCount       int       `json:"like_count"`
 	Liked           bool      `json:"liked"`
-	CreatedAt       time.Time `json:"created_at"`
+	// Lampiran gambar opsional pada komentar.
+	MediaURL  string    `json:"media_url,omitempty"`
+	MediaKind string    `json:"media_kind,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 // Method (bukan free func) supaya bisa menyusun URL avatar penulis lewat
@@ -331,8 +334,19 @@ func (h *Reel) toReelCommentDTO(c reel.Comment) reelCommentDTO {
 		Body:            c.Body,
 		LikeCount:       c.LikeCount,
 		Liked:           c.Liked,
+		MediaURL:        commentMediaURL(h, c.MediaID),
+		MediaKind:       c.MediaKind,
 		CreatedAt:       c.CreatedAt,
 	}
+}
+
+// commentMediaURL menyusun URL publik lampiran komentar dari storage_key yang
+// sudah di-resolve repo. Kosong bila komentar tak berlampiran.
+func commentMediaURL(h *Reel, storageKey string) string {
+	if storageKey == "" {
+		return ""
+	}
+	return h.media.PublicURL(storageKey)
 }
 
 type addCommentRequest struct {
@@ -340,6 +354,8 @@ type addCommentRequest struct {
 	ParentID string `json:"parent_id"`
 	// ReplyToID: komentar spesifik yang dibalas (opsional, untuk kutipan).
 	ReplyToID string `json:"reply_to_id"`
+	// MediaID: lampiran gambar opsional (media yang sudah diunggah & dikonfirmasi).
+	MediaID string `json:"media_id"`
 }
 
 // AddComment menangani POST /api/v1/reels/{id}/comments.
@@ -349,7 +365,7 @@ func (h *Reel) AddComment(w http.ResponseWriter, r *http.Request) {
 		httpx.Fail(w, r, http.StatusBadRequest, httpx.CodeBadRequest, err.Error())
 		return
 	}
-	c, err := h.svc.AddComment(r.Context(), r.PathValue("id"), auth.UserID(r.Context()), req.Body, req.ParentID, req.ReplyToID)
+	c, err := h.svc.AddComment(r.Context(), r.PathValue("id"), auth.UserID(r.Context()), req.Body, req.ParentID, req.ReplyToID, req.MediaID)
 	if err != nil {
 		writeReelError(w, r, err)
 		return

@@ -7,6 +7,34 @@ pencarian, dan menu — semuanya dalam tema gelap `#121212` dengan font **Ralewa
 
 ---
 
+## 📷 Foto & tandai (@mention) di komentar Shorts (2026-07-28)
+
+Komentar reel kini bisa **berlampiran satu foto** dan **menandai orang** lewat @mention.
+
+| Verb & path | Yang berubah | Catatan |
+|---|---|---|
+| `POST /api/v1/reels/{id}/comments` | body kini menerima `media_id` (opsional) | foto yang sudah diunggah via `/media/*` |
+| `GET /api/v1/reels/{id}/comments` | tiap komentar kini memuat `media_url` + `media_kind` (bila ada) | untuk render foto |
+
+- **Badan boleh kosong asal ada `media_id`** (komentar hanya-foto). Teks kosong + tanpa
+  media → **400**. Media harus milik pemanggil, `kind='image'`, `processing_status='ready'`
+  (kalau tidak → 403).
+- **@mention**: setiap `@username` di badan komentar memicu **notifikasi `type=mention`**
+  (subjek `reel`) ke orang itu, sebagai ajakan menonton reel. Diri-sendiri & blokir
+  disaring di database; username tak dikenal diabaikan. Tak ada endpoint baru — cukup
+  tulis `@username` di badan komentar.
+
+**Ada migrasi:** `20260728000062_reel_comment_media.sql` — menambah kolom
+`reel_comments.media_id`, **melonggarkan** CHECK badan (boleh kosong bila ada media),
+overload `add_reel_comment` **7-argumen** (+`p_media`), dan me-recreate
+`list_reel_comments` (tambah `media_id` + `media_kind`). Jalankan migrasi + deploy Go
+sebelum fitur aktif. (@mention murni logika Go — aktif begitu Go di-deploy.)
+
+App memakainya di sheet komentar Shorts: tombol foto (📷) melampirkan gambar, tombol
+tandai (@) membuka pencari orang lalu menyisipkan `@username`.
+
+---
+
 ## ❤️ Suka komentar Shorts — PUT/DELETE .../comments/{comment_id}/like (2026-07-28)
 
 Tiap **komentar reel** kini bisa disukai, seperti komentar TikTok/Instagram.
