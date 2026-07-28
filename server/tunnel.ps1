@@ -72,6 +72,18 @@ function Get-TunnelId {
     return $null
 }
 
+function Test-Origin {
+    # Tunnel yang sehat di depan origin yang mati tetap balas 502, dan itu
+    # terlihat persis seperti tunnelnya yang rusak. Cek dulu, sekali, di sini.
+    $code = & curl.exe -s -o NUL -w "%{http_code}" -m 4 "$Local/healthz" 2>$null
+    if ($code -ne "200") {
+        Write-Host "PERINGATAN: $Local/healthz balas '$code', bukan 200." -ForegroundColor Yellow
+        Write-Host "  Tunnel akan jalan tapi semua permintaan balas 502. Nyalakan dulu:" -ForegroundColor Yellow
+        Write-Host "    .\start.ps1"
+        Write-Host ""
+    }
+}
+
 Require-Cloudflared
 
 # --------------------------------------------------------------------------
@@ -134,6 +146,7 @@ if ($Run) {
         exit 1
     }
     New-Item -ItemType Directory -Force $logsDir | Out-Null
+    Test-Origin
 
     # Hentikan yang lama supaya tidak dobel.
     Get-Process cloudflared -ErrorAction SilentlyContinue | Stop-Process -Force
@@ -161,6 +174,7 @@ if ($Run) {
 if ($Quick) {
     New-Item -ItemType Directory -Force $logsDir | Out-Null
     $qlog = Join-Path $logsDir "quicktunnel.log"
+    Test-Origin
 
     Get-Process cloudflared -ErrorAction SilentlyContinue | Stop-Process -Force
     Start-Sleep -Milliseconds 300
@@ -168,20 +182,32 @@ if ($Quick) {
     Start-Process cloudflared -ArgumentList "tunnel", "--no-autoupdate", "--protocol", $Protocol, "--url", $Local `
         -WindowStyle Hidden -RedirectStandardOutput "$qlog.out" -RedirectStandardError $qlog
 
+    # Versi cloudflared berbeda-beda menaruh banner URL di stderr atau stdout.
+    # Dicari di keduanya supaya skrip tidak menggantung 25 detik lalu menyerah
+    # padahal tunnelnya sudah jalan.
+    $both = @($qlog, "$qlog.out")
+
     Write-Host "Menunggu URL quick tunnel (URL ini ACAK & berubah tiap dijalankan)..." -ForegroundColor Yellow
     $url = $null
     for ($i = 0; $i -lt 25; $i++) {
         Start-Sleep -Seconds 1
-        if (Test-Path $qlog) {
-            $m = Select-String -Path $qlog -Pattern 'https://[a-z0-9-]+\.trycloudflare\.com' -AllMatches | Select-Object -First 1
+        $present = $both | Where-Object { Test-Path $_ }
+        if ($present) {
+            $m = Select-String -Path $present -Pattern 'https://[a-z0-9-]+\.trycloudflare\.com' -AllMatches | Select-Object -First 1
             if ($m) { $url = $m.Matches[0].Value; break }
+        }
+        if (-not (Get-Process cloudflared -ErrorAction SilentlyContinue)) {
+            Write-Host "cloudflared mati sebelum memberi URL. Isi $qlog :" -ForegroundColor Red
+            Get-Content $qlog -Tail 20 -ErrorAction SilentlyContinue
+            exit 1
         }
     }
     if (-not $url) { Write-Host "URL belum muncul. Cek $qlog" -ForegroundColor Red; exit 1 }
 
     # Tunggu koneksi edge benar-benar terdaftar, kalau tidak akses awal balas 1033.
     for ($i = 0; $i -lt 15; $i++) {
-        if (Select-String -Path $qlog -Pattern 'Registered tunnel connection' -Quiet) { break }
+        $present = $both | Where-Object { Test-Path $_ }
+        if ($present -and (Select-String -Path $present -Pattern 'Registered tunnel connection' -Quiet)) { break }
         Start-Sleep -Seconds 1
     }
 
@@ -198,10 +224,17 @@ if ($Quick) {
 if ($Status) {
     $p = Get-Process cloudflared -ErrorAction SilentlyContinue
     if ($p) {
-        Write-Host "cloudflared JALAN (PID $($p.Id), mulai $($p.StartTime))" -ForegroundColor Green
+        # StartTime melempar Access denied kalau prosesnya milik sesi lain.
+        $since = try { $p[0].StartTime } catch { "?" }
+        Write-Host "cloudflared JALAN (PID $($p[0].Id), mulai $since)" -ForegroundColor Green
     } else {
         Write-Host "cloudflared TIDAK jalan." -ForegroundColor Yellow
     }
+
+    $code = & curl.exe -s -o NUL -w "%{http_code}" -m 4 "$Local/healthz" 2>$null
+    if ($code -eq "200") { Write-Host "origin $Local : OK" -ForegroundColor Green }
+    else                 { Write-Host "origin $Local : $code (jalankan .\start.ps1)" -ForegroundColor Yellow }
+
     $id = Get-TunnelId $Name
     if ($id) { cloudflared tunnel info $Name 2>$null | Out-Host }
     exit 0
@@ -209,7 +242,9 @@ if ($Status) {
 
 # --------------------------------------------------------------------------
 if ($Stop) {
-    Get-Process cloudflared -ErrorAction SilentlyContinue | Stop-Process -Force
+    $p = Get-Process cloudflared -ErrorAction SilentlyContinue
+    if (-not $p) { Write-Host "cloudflared memang tidak jalan." -ForegroundColor Yellow; exit 0 }
+    $p | Stop-Process -Force
     Write-Host "cloudflared dihentikan." -ForegroundColor Green
     exit 0
 }

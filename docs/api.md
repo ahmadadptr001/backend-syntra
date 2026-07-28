@@ -212,6 +212,8 @@ Seluruh baris di tabel ini **diverifikasi jalan** lewat `server/scripts/smoke.ps
 | `POST` | `/api/v1/calls/{id}/decline` | ✅ |
 | `POST` | `/api/v1/calls/{id}/leave` | ✅ |
 | `GET` | `/api/v1/conversations/{id}/call` | ✅ |
+| `POST` | `/api/v1/calls/{id}/invite` | ✅ |
+| `GET` | `/api/v1/calls/{id}/participants` | ✅ |
 | `POST` | `/api/v1/sfu/webhook` | ✅ |
 | `GET` | `/api/v1/stories` | ✅ |
 | `POST` | `/api/v1/stories` | ✅ |
@@ -219,12 +221,16 @@ Seluruh baris di tabel ini **diverifikasi jalan** lewat `server/scripts/smoke.ps
 | `POST` | `/api/v1/stories/{id}/view` | ✅ |
 | `GET` | `/api/v1/stories/{id}/viewers` | ✅ |
 | `DELETE` | `/api/v1/stories/{id}` | ✅ |
+| `GET` | `/api/v1/users/search` | ✅ |
 | `GET` | `/api/v1/users/{username}` | ✅ |
 | `POST` | `/api/v1/users/{username}/follow` | ✅ |
 | `DELETE` | `/api/v1/users/{username}/follow` | ✅ |
 | `GET` | `/api/v1/users/me` | ✅ |
 | `PATCH` | `/api/v1/users/me` | ✅ |
+| `DELETE` | `/api/v1/users/me/cover` | ✅ |
+| `GET` | `/api/v1/users/me/visitors` | ✅ |
 | `GET` | `/api/v1/users/me/blocked` | ✅ |
+| `GET` | `/api/v1/users/me/blocked-by` | ✅ |
 | `POST` | `/api/v1/users/{username}/block` | ✅ |
 | `DELETE` | `/api/v1/users/{username}/block` | ✅ |
 | `POST` | `/api/v1/devices` | ✅ |
@@ -272,7 +278,14 @@ Seluruh baris di tabel ini **diverifikasi jalan** lewat `server/scripts/smoke.ps
 | `GET` | `/api/v1/reels/{id}/comments` | ✅ |
 | `POST` | `/api/v1/reels/{id}/comments` | ✅ |
 | `DELETE` | `/api/v1/reels/{id}/comments/{comment_id}` | ✅ |
+| `PUT` | `/api/v1/reels/{id}/comments/{comment_id}/like` | ✅ |
+| `DELETE` | `/api/v1/reels/{id}/comments/{comment_id}/like` | ✅ |
 | `GET` | `/api/v1/users/{username}/reels` | ✅ |
+| `POST` | `/api/v1/music` | ✅ |
+| `GET` | `/api/v1/music` | ✅ |
+| `GET` | `/api/v1/music/search` | ✅ |
+| `PATCH` | `/api/v1/music/{id}` | ✅ |
+| `DELETE` | `/api/v1/music/{id}` | ✅ |
 | `GET` | `/api/v1/ws` | ✅ |
 
 Sumbernya: [`server/internal/transport/rest/router.go`](../server/internal/transport/rest/router.go).
@@ -748,6 +761,38 @@ Panggilan yang sedang berlangsung pada percakapan — untuk menampilkan tombol
 
 `data: null` kalau tidak ada panggilan aktif.
 
+### `POST /api/v1/calls/{id}/invite`
+
+Mengajak orang lain masuk ke panggilan yang sedang berlangsung — dasar dari
+**panggilan grup (maksimal 5 orang)**.
+
+```json
+{ "target_id": "4e12...", "kind": "video" }
+```
+
+Yang diundang menerima `call.incoming` seperti panggilan biasa dan menjawab
+dengan `POST /calls/{id}/answer` yang sama — ia tidak perlu jadi anggota
+percakapan asalnya, cukup terdaftar sebagai undangan.
+
+- `403` kalau pemanggil sendiri bukan peserta panggilan itu.
+- `409` kalau panggilan sudah penuh (5 orang) atau sudah berakhir.
+
+### `GET /api/v1/calls/{id}/participants`
+
+Daftar peserta panggilan — dipakai untuk memutuskan tata letak (satu lawan satu
+vs bento grid) dan untuk menampilkan nama & foto, bukan id mentah.
+
+```json
+{
+  "data": [
+    { "user_id": "4e12...", "username": "rani", "display_name": "Rani", "joined": true },
+    { "user_id": "7a90...", "username": "bagas", "display_name": "Bagas", "joined": false }
+  ]
+}
+```
+
+`joined: false` = sudah diundang tetapi belum mengangkat.
+
 ### `POST /api/v1/sfu/webhook`
 
 **Bukan endpoint aplikasi** — dipanggil oleh **LiveKit Cloud**, bukan klien.
@@ -1000,12 +1045,31 @@ memperbarui nama & foto tanpa buka ulang app. `avatar_url` sudah siap tampil.
 ```
 POST   /api/v1/users/{username}/block     → 204
 DELETE /api/v1/users/{username}/block     → 204
-GET    /api/v1/users/me/blocked           daftar yang diblokir
+GET    /api/v1/users/me/blocked           daftar yang kamu blokir
+GET    /api/v1/users/me/blocked-by        daftar yang memblokir kamu
 ```
 
 Memblokir **memutus follow dua arah**: yang diblokir berhenti menerima story dan
 pembaruan dari yang memblokir, dan sebaliknya. Blokir juga menghalangi masuk
 voice room dan memulai chat.
+
+**`blocked-by` adalah sisi yang mudah terlupakan.** Tanpa daftar ini app tidak
+punya cara tahu bahwa *dirinya* diblokir, sehingga tetap menampilkan nama, foto,
+status online, story, dan tombol telepon milik orang yang sudah memblokirnya —
+blokirnya jadi terasa tidak berfungsi. Muat sekali saat app dibuka, lalu samarkan
+setiap orang di dalamnya (nama → "Pengguna", tanpa foto, tanpa presence).
+Balasannya `{ "data": [{ "user_id", "username" }], "meta": { "count": n } }`.
+
+### Sampul profil & pengunjung
+
+```
+DELETE /api/v1/users/me/cover     → 204   hapus background profil
+GET    /api/v1/users/me/visitors  ?limit=20
+```
+
+`visitors` membalas `{ "data": { "total": 12, "visitors": [
+{ "user_id", "username", "display_name", "avatar_url", "visited_at" } ] } }` —
+kunjungan profil dalam 24 jam terakhir, terbaru dulu.
 
 ### Perangkat — untuk push notification (FCM)
 
@@ -1452,11 +1516,15 @@ Komentar sebuah reel, terbaru dulu (paginasi `before_at` + `before_id`).
     "id": "019f9c01-...", "reel_id": "019f9b01-...",
     "author_id": "4e12...", "author_username": "budi", "author_name": "Budi",
     "parent_comment_id": null, "body": "keren!", "like_count": 0,
+    "liked": false, "media_url": null, "media_kind": null,
     "created_at": "2026-07-24T10:05:00Z"
   }],
   "meta": { "count": 1 }
 }
 ```
+
+`liked` = status suka **pemanggil** atas komentar itu. `media_url`/`media_kind`
+terisi kalau komentarnya berlampiran foto.
 
 ### `POST /api/v1/reels/{id}/comments`
 
@@ -1464,13 +1532,77 @@ Menambah komentar. Balasan hanya **satu tingkat** (`parent_id` opsional, dan
 parent tidak boleh punya parent). Reel dengan `comments_enabled: false` → `403`.
 
 ```json
-{ "body": "keren!", "parent_id": null }
+{ "body": "keren!", "parent_id": null, "media_id": null }
 ```
+
+- `media_id` opsional — foto yang sudah diunggah lewat alur `/media/*`. Harus
+  milik pemanggil, `kind: image`, `processing_status: ready`; kalau tidak → `403`.
+- **Badan boleh kosong asal ada `media_id`** (komentar hanya-foto). Kosong dan
+  tanpa media → `400`.
+- Setiap `@username` di badan memicu notifikasi `type: mention` (subjek `reel`)
+  ke orang itu. Diri sendiri & yang memblokir disaring di database; username tak
+  dikenal diabaikan. Tidak ada endpoint khusus — cukup tulis `@username`.
+
+### `PUT` / `DELETE /api/v1/reels/{id}/comments/{comment_id}/like`
+
+Menyukai / batal menyukai **sebuah komentar**. Idempoten (suka ulang = no-op),
+`like_count` tak pernah turun di bawah 0. Balasan `204`.
+
+Komentar pada reel yang tidak boleh dilihat pemanggil → `404` (aturan
+`reel_visible_to` yang sama dengan menyukai reel).
 
 ### `DELETE /api/v1/reels/{id}/comments/{comment_id}`
 
 Menghapus komentar. Boleh oleh **penulis komentar** atau **pemilik reel**
 (moderasi kontennya sendiri). Selain itu `403`. Balasan `204`.
+
+---
+
+## 8c. Musik komunitas
+
+Katalog lagu yang diunggah pengguna — dipakai sebagai audio story/reel dan
+punya tab pencariannya sendiri di app. Berkas audio (dan sampulnya) diunggah
+lewat alur media tiga langkah di §8 dulu, baru didaftarkan di sini.
+
+### `POST /api/v1/music`
+
+```json
+{ "media_id": "019f...", "title": "Senja", "artist": "Rani",
+  "duration_ms": 184000, "cover_media_id": null }
+```
+
+Balasan `201` berisi objek lagu. Lagu **langsung publik** — begitu terdaftar,
+pengguna lain sudah bisa menemukannya lewat `/music/search`. Media harus milik
+pemanggil dan sudah `ready`, kalau tidak → `403`.
+
+### `GET /api/v1/music` · `GET /api/v1/music/search?q=<query>`
+
+Feed katalog dan pencarian berdasarkan judul/artis. Keduanya menerima `limit`
+dan membalas bentuk yang sama:
+
+```json
+{
+  "data": [{
+    "id": "019f...", "title": "Senja", "artist": "Rani",
+    "url": "https://.../audio.m4a", "cover_url": "https://.../cover.jpg",
+    "duration_ms": 184000,
+    "author_id": "4e12...", "author_name": "Rani",
+    "created_at": "2026-07-27T10:00:00Z"
+  }]
+}
+```
+
+`url` sudah berupa alamat siap-putar; tidak perlu menukar media id lagi.
+
+### `PATCH /api/v1/music/{id}` · `DELETE /api/v1/music/{id}`
+
+Ubah judul (`{"title":"Judul baru"}`, non-kosong, ≤200 char) atau hapus lagu.
+**Pemilik saja** — selain itu `403`; judul tak valid → `400`. Keduanya `204`.
+PATCH hanya menyentuh `title`; media, sampul, dan visibilitas tak berubah.
+
+> Sampul **kustom per-lagu** yang dipilih pengguna dari galeri sendiri disimpan
+> di penyimpanan perangkat, **bukan** di endpoint ini — jadi tidak ikut terlihat
+> oleh pengguna lain.
 
 ---
 
@@ -1524,6 +1656,7 @@ diganti dengan yang otoritatif dari server begitu `ack` tiba.
 | `ping` | — | dibalas `pong` |
 | `message.send` | `{"conversation_id","type?","body","reply_to_id?"}` | simpan + siarkan pesan |
 | `message.read` | `{"conversation_id","message_id"}` | reset unread, sinkron antar-perangkat |
+| `message.delivered` | `{"conversation_id","message_id"}` | penerima memberi tahu pesan sudah **sampai di perangkatnya** — pengirim menaikkan centang 1 → 2. Efemeral, tidak disimpan. Kirim baik saat chat terbuka maupun saat hanya terlihat di daftar chat |
 | `typing.start` | `{"conversation_id"}` | siarkan indikator mengetik |
 | `typing.stop` | `{"conversation_id"}` | hentikan indikator |
 | `presence.query` | `{"user_ids":[...]}` | tanya status online sekumpulan orang |
