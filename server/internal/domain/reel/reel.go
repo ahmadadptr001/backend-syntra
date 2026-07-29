@@ -472,7 +472,11 @@ func (s *Service) UpdateComment(ctx context.Context, commentID, userID, body str
 	if commentID == "" || userID == "" {
 		return ErrInvalidInput
 	}
-	if len([]rune(body)) > 2200 {
+	// 1000, matching reel_comments_body_check and add_reel_comment. This said 2200
+	// — a number carried over from the reel CAPTION limit — so an over-long edit got
+	// past Go and only failed at the table's CHECK. Migrasi 65 fixed the same slip
+	// in the SQL function; this is the other half of it.
+	if len([]rune(body)) > 1000 {
 		return ErrInvalidInput
 	}
 	return s.repo.UpdateComment(ctx, commentID, userID, body)
