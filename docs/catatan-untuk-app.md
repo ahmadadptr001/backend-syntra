@@ -36,8 +36,15 @@ menghitung penonton aktif (host tak dihitung). Live selalu publik; yang saling b
 dengan host tak melihat/masuk. Live hantu ditutup otomatis tiap 2 menit (idle 5 menit,
 saat host tak lagi tercatat aktif).
 
-**Belum ada (masih scaffold lokal di app, calon kerja backend berikutnya):** komentar
-live realtime (sekarang efemeral lokal), serta **GIF gift + dompet koin** (butuh tabel
+**Komentar live realtime (WebSocket) — SUDAH ADA (2026-08-04, tanpa migrasi baru):**
+efemeral seperti chat voice room. Kirim frame `live.comment` `{live_id, body}` (≤300
+char); server menyiarkan `live.message` `{live_id, sender_id, sender_username, body,
+created_at}` ke topik **`live:<id>`**. Langgan `live:<id>` lewat `subscribe` **setelah**
+`POST /lives/{id}/join` (otorisasi topik = tercatat di `live_viewers`). `sender_username`
+di-resolve di server dari `sender_id` (tak bisa dipakai menyamar). Tidak disimpan — yang
+join di tengah hanya melihat komentar sejak ia masuk.
+
+**Belum ada (masih scaffold lokal di app):** **GIF gift + dompet koin** (butuh tabel
 saldo/transaksi + sumber GIF).
 
 ---

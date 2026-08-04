@@ -17,6 +17,7 @@ const (
 	KindUser         Kind = "user"
 	KindConversation Kind = "conversation"
 	KindRoom         Kind = "room"
+	KindLive         Kind = "live"
 	KindReel         Kind = "reel"
 
 	// Feed global (singleton): tidak terikat satu entitas, melainkan kanal umum
@@ -44,6 +45,9 @@ func Conversation(conversationID string) string {
 // Room adalah kanal satu voice room.
 func Room(roomID string) string { return string(KindRoom) + separator + roomID }
 
+// Live adalah kanal satu siaran langsung: komentar realtime penonton.
+func Live(liveID string) string { return string(KindLive) + separator + liveID }
+
 // Reel adalah kanal satu reel, untuk counter like/komentar secara langsung.
 func Reel(reelID string) string { return string(KindReel) + separator + reelID }
 
@@ -70,7 +74,7 @@ func Parse(name string) (Kind, string, bool) {
 	}
 
 	switch Kind(kind) {
-	case KindUser, KindConversation, KindRoom, KindReel, KindRoomsFeed, KindReelsFeed, KindMusicFeed:
+	case KindUser, KindConversation, KindRoom, KindLive, KindReel, KindRoomsFeed, KindReelsFeed, KindMusicFeed:
 		return Kind(kind), id, true
 	default:
 		return "", "", false

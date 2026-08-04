@@ -389,6 +389,52 @@ func (r *ChatRepository) IsRoomParticipant(ctx context.Context, roomID, userID s
 	return len(rows) > 0, nil
 }
 
+// IsLiveViewer memeriksa apakah pengguna sedang berada di sebuah live (host atau
+// penonton). Otorisasi langganan topik live:<id> — hanya yang tercatat di
+// live_viewers (lewat join_live) boleh menyimak & mengirim komentar.
+//
+// Service role, alasannya sama seperti IsRoomParticipant: live_viewers RLS-enabled
+// tanpa policy SELECT, jadi query lewat JWT selalu default-deny. Yang dikembalikan
+// hanya boolean untuk gerbang otorisasi (live_id + user_id sudah dipatok; user_id
+// dari JWT WS terverifikasi).
+func (r *ChatRepository) IsLiveViewer(ctx context.Context, liveID, userID string) (bool, error) {
+	query := url.Values{}
+	query.Set("select", "id")
+	query.Set("live_id", "eq."+liveID)
+	query.Set("user_id", "eq."+userID)
+	query.Set("left_at", "is.null")
+	query.Set("limit", "1")
+
+	var rows []struct {
+		ID string `json:"id"`
+	}
+	if err := r.client.Select(ctx, "live_viewers", &rows, sb.WithServiceRole(), sb.WithQuery(query)); err != nil {
+		return false, translate(err)
+	}
+	return len(rows) > 0, nil
+}
+
+// UsernameByID menukar id pengguna menjadi @username, untuk melabeli komentar live
+// dengan nama yang di-resolve SERVER (bukan yang diklaim klien) supaya tidak bisa
+// dipakai menyamar. Best-effort: string kosong kalau tak ketemu.
+func (r *ChatRepository) UsernameByID(ctx context.Context, userID string) (string, error) {
+	query := url.Values{}
+	query.Set("select", "username")
+	query.Set("id", "eq."+userID)
+	query.Set("limit", "1")
+
+	var rows []struct {
+		Username string `json:"username"`
+	}
+	if err := r.client.Select(ctx, "users", &rows, sb.WithServiceRole(), sb.WithQuery(query)); err != nil {
+		return "", translate(err)
+	}
+	if len(rows) == 0 {
+		return "", nil
+	}
+	return rows[0].Username, nil
+}
+
 // InsertMessage memanggil fungsi send_message.
 //
 // Fungsi itu menyimpan pesan, memperbarui ringkasan percakapan, dan menaikkan

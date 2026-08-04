@@ -39,6 +39,11 @@ const (
 	// seluruh percakapannya lenyap — tidak ada riwayat untuk dimuat, dan tidak
 	// ada endpoint untuk mengambilnya kembali.
 	TypeRoomChat = "room.chat"
+
+	// TypeLiveComment adalah komentar di dalam siaran langsung (live). Sama
+	// efemeralnya dengan room.chat: tidak pernah disimpan, hanya disiarkan ke
+	// penonton yang sedang terhubung, lalu hilang bersama siarannya.
+	TypeLiveComment = "live.comment"
 )
 
 // Catatan: masuk dan keluar voice room dilakukan lewat REST
@@ -57,6 +62,10 @@ const (
 	// TypeRoomMessage adalah siaran pesan room ke peserta lain. Efemeral —
 	// lihat catatan di TypeRoomChat.
 	TypeRoomMessage = "room.message"
+
+	// TypeLiveMessage adalah siaran komentar live ke penonton lain. Efemeral —
+	// lihat catatan di TypeLiveComment.
+	TypeLiveMessage = "live.message"
 
 	TypeNotification = "notification.new"
 )

@@ -31,6 +31,10 @@ type ChatService interface {
 type MembershipChecker interface {
 	IsMember(ctx context.Context, conversationID, userID string) (bool, error)
 	IsRoomParticipant(ctx context.Context, roomID, userID string) (bool, error)
+	IsLiveViewer(ctx context.Context, liveID, userID string) (bool, error)
+	// UsernameByID melabeli komentar live dengan nama yang di-resolve server,
+	// bukan yang diklaim klien — supaya tidak bisa dipakai menyamar.
+	UsernameByID(ctx context.Context, userID string) (string, error)
 }
 
 // PresenceService adalah bagian domain presence yang dipakai transport ini.
@@ -65,6 +69,7 @@ func RegisterHandlers(r *Router, chatSvc ChatService, members MembershipChecker,
 	r.Handle(protocol.TypeTypingStop, handleTyping(false))
 	r.Handle(protocol.TypePresenceQuery, handlePresenceQuery(presenceSvc))
 	r.Handle(protocol.TypeRoomChat, handleRoomChat)
+	r.Handle(protocol.TypeLiveComment, handleLiveComment(members))
 }
 
 // MaxRoomChatLength membatasi panjang pesan di dalam room.
@@ -127,6 +132,71 @@ func handleRoomChat(ctx context.Context, c *Client, env protocol.Envelope) error
 	}
 
 	return c.hub.Publish(ctx, name, frame)
+}
+
+// MaxLiveCommentLength membatasi panjang komentar di dalam live.
+const MaxLiveCommentLength = 300
+
+type liveCommentPayload struct {
+	LiveID string `json:"live_id"`
+	Body   string `json:"body"`
+}
+
+type liveCommentEvent struct {
+	LiveID string `json:"live_id"`
+
+	SenderID string `json:"sender_id"`
+	// SenderUsername di-resolve di SERVER dari sender_id (bukan dari klien), jadi
+	// penonton tak bisa menyamar jadi orang lain lewat komentar.
+	SenderUsername string    `json:"sender_username,omitempty"`
+	Body           string    `json:"body"`
+	CreatedAt      time.Time `json:"created_at"`
+}
+
+// handleLiveComment menyiarkan komentar teks di dalam siaran langsung.
+//
+// Efemeral, persis seperti chat voice room: tidak menyentuh database, disiarkan
+// ke penonton yang sedang terhubung lalu hilang. Otorisasinya bersandar pada
+// langganan yang sudah tervalidasi (topik live:<id> hanya lolos untuk yang
+// tercatat di live_viewers). Nama pengirim di-resolve di server supaya tak bisa
+// dipakai menyamar.
+func handleLiveComment(members MembershipChecker) HandlerFunc {
+	return func(ctx context.Context, c *Client, env protocol.Envelope) error {
+		var payload liveCommentPayload
+		if err := env.DecodeData(&payload); err != nil {
+			return errBadPayload
+		}
+
+		payload.Body = strings.TrimSpace(payload.Body)
+		if payload.LiveID == "" || payload.Body == "" {
+			return errBadPayload
+		}
+		if utf8.RuneCountInString(payload.Body) > MaxLiveCommentLength {
+			return errBadPayload
+		}
+
+		name := topic.Live(payload.LiveID)
+		if !c.hub.IsSubscribed(c, name) {
+			return errNotSubscribed
+		}
+
+		// Best-effort: kalau resolve gagal, kirim tanpa username daripada gagal
+		// menyiarkan komentar.
+		username, _ := members.UsernameByID(ctx, c.UserID)
+
+		frame, err := protocol.EncodeEvent(protocol.TypeLiveMessage, liveCommentEvent{
+			LiveID:         payload.LiveID,
+			SenderID:       c.UserID,
+			SenderUsername: username,
+			Body:           payload.Body,
+			CreatedAt:      time.Now().UTC(),
+		})
+		if err != nil {
+			return err
+		}
+
+		return c.hub.Publish(ctx, name, frame)
+	}
 }
 
 // PresenceEvent adalah bentuk payload presence.update yang diterima klien.
@@ -329,6 +399,19 @@ func authorizeTopic(ctx context.Context, c *Client, name string, members Members
 			return err
 		}
 		if !isParticipant {
+			return errTopicDenied
+		}
+		return nil
+
+	case topic.KindLive:
+		// Otorisasinya bersandar pada keanggotaan yang tercatat saat join_live
+		// (yang sudah memeriksa blokir & bahwa live masih hidup). Yang lewat kanal
+		// ini hanya komentar teks efemeral; videonya lewat SFU, bukan lewat sini.
+		isViewer, err := members.IsLiveViewer(ctx, entityID, c.UserID)
+		if err != nil {
+			return err
+		}
+		if !isViewer {
 			return errTopicDenied
 		}
 		return nil
