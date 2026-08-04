@@ -23,6 +23,7 @@ import (
 	"github.com/ahmadadptr001/backend-syntra/internal/domain/account"
 	"github.com/ahmadadptr001/backend-syntra/internal/domain/call"
 	"github.com/ahmadadptr001/backend-syntra/internal/domain/chat"
+	"github.com/ahmadadptr001/backend-syntra/internal/domain/live"
 	"github.com/ahmadadptr001/backend-syntra/internal/domain/media"
 	"github.com/ahmadadptr001/backend-syntra/internal/domain/notification"
 	"github.com/ahmadadptr001/backend-syntra/internal/domain/presence"
@@ -52,6 +53,7 @@ type App struct {
 	redis  *goredis.Client
 	hub    *ws.Hub
 	rooms  *room.Service
+	lives  *live.Service
 	server *http.Server
 }
 
@@ -99,6 +101,7 @@ func New(ctx context.Context, cfg *config.Config, log *slog.Logger) (*App, error
 	notifRepo := repo.NewNotificationRepository(supa)
 	profileRepo := repo.NewProfileRepository(supa)
 	roomRepo := repo.NewRoomRepository(supa)
+	liveRepo := repo.NewLiveRepository(supa)
 	callRepo := repo.NewCallRepository(supa)
 	reelRepo := repo.NewReelRepository(supa)
 	musicRepo := repo.NewMusicRepository(supa)
@@ -114,6 +117,9 @@ func New(ctx context.Context, cfg *config.Config, log *slog.Logger) (*App, error
 	userService := user.NewService(userRepo)
 	presenceService := presence.NewService(presenceStore, cfg.WS.PresenceTTL, presenceVisibility)
 	roomService := room.NewService(roomRepo, sfu, ws.NewPublisher(hub), mediaService.PublicURL)
+	// Live memakai penerbit token SFU yang sama dengan voice room/call — host
+	// menerbitkan video, penonton berlangganan.
+	liveService := live.NewService(liveRepo, sfu)
 	// sfu memenuhi TokenIssuer sekaligus WebhookVerifier — objek yang sama
 	// menerbitkan token dan memverifikasi webhook LiveKit.
 	callService := call.NewService(callRepo, sfu, sfu, ws.NewPublisher(hub))
@@ -171,6 +177,7 @@ func New(ctx context.Context, cfg *config.Config, log *slog.Logger) (*App, error
 		User:    handler.NewUser(userService, mediaService),
 		Media:   handler.NewMedia(mediaService),
 		Room:    handler.NewRoom(roomService, mediaService),
+		Live:    handler.NewLive(liveService, mediaService),
 		Notif:   handler.NewNotification(notifService, mediaService),
 		Profile: handler.NewProfile(profileService, mediaService),
 		Call:    handler.NewCall(callService),
@@ -203,6 +210,7 @@ func New(ctx context.Context, cfg *config.Config, log *slog.Logger) (*App, error
 		redis:  rdb,
 		hub:    hub,
 		rooms:  roomService,
+		lives:  liveService,
 		server: server,
 	}, nil
 }
@@ -234,6 +242,31 @@ func (a *App) closeStaleRooms(ctx context.Context) {
 	}
 }
 
+// closeStaleLives menutup live yang ditinggalkan tanpa sempat diakhiri — host
+// yang aplikasinya tertutup paksa atau kehilangan jaringan tidak pernah
+// memanggil leave. Idle 5 menit lebih pendek dari room karena live tanpa host
+// yang publish hanya menampilkan layar beku ke penonton.
+func (a *App) closeStaleLives(ctx context.Context) {
+	ticker := time.NewTicker(2 * time.Minute)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			closed, err := a.lives.CloseStale(ctx, 5)
+			if err != nil {
+				a.log.Warn("gagal menutup live terbengkalai", "error", err)
+				continue
+			}
+			if closed > 0 {
+				a.log.Info("live terbengkalai ditutup", "jumlah", closed)
+			}
+		}
+	}
+}
+
 // Run menjalankan aplikasi sampai ctx dibatalkan atau ada komponen yang gagal.
 func (a *App) Run(ctx context.Context) error {
 	errCh := make(chan error, 2)
@@ -259,6 +292,7 @@ func (a *App) Run(ctx context.Context) error {
 	}()
 
 	go a.closeStaleRooms(ctx)
+	go a.closeStaleLives(ctx)
 
 	select {
 	case <-ctx.Done():

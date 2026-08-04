@@ -7,6 +7,41 @@ pencarian, dan menu — semuanya dalam tema gelap `#121212` dengan font **Ralewa
 
 ---
 
+## 🔴 Siaran langsung / Live (migrasi 66) (2026-08-04)
+
+Fitur **Live** kini punya backend sendiri: satu **host** menyiarkan video kamera ke
+banyak **penonton** lewat **LiveKit yang sama** dengan voice room. Backend hanya
+menerbitkan `sfu_token`; video mengalir host↔SFU↔penonton, tidak lewat backend.
+
+**ADA MIGRASI:** `20260804000066_lives.sql` — tabel `lives` + `live_viewers` dan fungsi
+`create_live`, `list_lives`, `get_live`, `join_live`, `end_live`, `end_live_by_host`,
+`leave_live`, `close_stale_lives`. **Jalankan di Supabase lalu deploy ulang Go.**
+LiveKit harus dikonfigurasi (`LIVEKIT_API_KEY/SECRET/URL`) — sama seperti voice room;
+tanpa itu live tercatat tapi `sfu_token` kosong (tak ada video).
+
+Endpoint (semua `Authorization: Bearer <jwt>`):
+
+| Method | Path | Untuk |
+|---|---|---|
+| `GET` | `/api/v1/lives` | daftar live berlangsung (+ `meta.sfu_ready`) |
+| `POST` | `/api/v1/lives` | mulai live (pemanggil jadi host, balasan berisi `join` + token) |
+| `GET` | `/api/v1/lives/{id}` | satu live (404 = sudah berakhir → penonton tutup layar) |
+| `POST` | `/api/v1/lives/{id}/join` | penonton masuk + **dapat token SFU** (subscribe) |
+| `POST` | `/api/v1/lives/{id}/leave` | keluar (host keluar = live berakhir) |
+| `POST` | `/api/v1/lives/{id}/end` · `DELETE /api/v1/lives/{id}` | host akhiri live |
+
+`POST /lives` → `data` = live + `join: {live_id, role, can_publish, sfu_room_id,
+sfu_token, sfu_url}`. `role`: `host` (publish) / `viewer` (subscribe). `viewer_count`
+menghitung penonton aktif (host tak dihitung). Live selalu publik; yang saling blokir
+dengan host tak melihat/masuk. Live hantu ditutup otomatis tiap 2 menit (idle 5 menit,
+saat host tak lagi tercatat aktif).
+
+**Belum ada (masih scaffold lokal di app, calon kerja backend berikutnya):** komentar
+live realtime (sekarang efemeral lokal), serta **GIF gift + dompet koin** (butuh tabel
+saldo/transaksi + sumber GIF).
+
+---
+
 ## 🐛 Perbaikan: batas panjang edit komentar (migrasi 65) (2026-07-29)
 
 Bug di **edit komentar** (migrasi 64): `update_reel_comment` membatasi badan **2200**

@@ -41,6 +41,7 @@ type Deps struct {
 	User    *handler.User
 	Media   *handler.Media
 	Room    *handler.Room
+	Live    *handler.Live
 	Notif   *handler.Notification
 	Profile *handler.Profile
 	Call    *handler.Call
@@ -240,6 +241,27 @@ func NewRouter(d Deps) http.Handler {
 		protected(http.HandlerFunc(d.Room.Invite)))
 	mux.Handle("PATCH /api/v1/rooms/{id}/mute",
 		protected(http.HandlerFunc(d.Room.SetMuted)))
+
+	// --- siaran langsung (live) ---
+	//
+	// Satu host publisher + banyak penonton. Memakai LiveKit yang sama dengan
+	// voice room; host menerbitkan video kamera, penonton berlangganan. Tanpa
+	// LiveKit, live tetap tercatat tapi tidak keluar video (sfu_token kosong).
+	mux.Handle("GET /api/v1/lives",
+		protected(http.HandlerFunc(d.Live.List)))
+	mux.Handle("POST /api/v1/lives",
+		protected(http.HandlerFunc(d.Live.Create)))
+	mux.Handle("GET /api/v1/lives/{id}",
+		protected(http.HandlerFunc(d.Live.Get)))
+	mux.Handle("POST /api/v1/lives/{id}/join",
+		protected(http.HandlerFunc(d.Live.Join)))
+	mux.Handle("POST /api/v1/lives/{id}/leave",
+		protected(http.HandlerFunc(d.Live.Leave)))
+	mux.Handle("POST /api/v1/lives/{id}/end",
+		protected(http.HandlerFunc(d.Live.End)))
+	// Bentuk RESTful yang setara dengan POST .../end.
+	mux.Handle("DELETE /api/v1/lives/{id}",
+		protected(http.HandlerFunc(d.Live.End)))
 
 	// --- telepon & video call ---
 	//
