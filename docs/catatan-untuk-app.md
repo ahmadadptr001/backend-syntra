@@ -7,13 +7,13 @@ pencarian, dan menu — semuanya dalam tema gelap `#121212` dengan font **Ralewa
 
 ---
 
-## 🔴 Siaran langsung / Live (migrasi 66) (2026-08-04)
+## 🔴 Siaran langsung / Live (migrasi 68) (2026-08-04)
 
 Fitur **Live** kini punya backend sendiri: satu **host** menyiarkan video kamera ke
 banyak **penonton** lewat **LiveKit yang sama** dengan voice room. Backend hanya
 menerbitkan `sfu_token`; video mengalir host↔SFU↔penonton, tidak lewat backend.
 
-**ADA MIGRASI:** `20260804000066_lives.sql` — tabel `lives` + `live_viewers` dan fungsi
+**ADA MIGRASI:** `20260804000068_lives.sql` — tabel `lives` + `live_viewers` dan fungsi
 `create_live`, `list_lives`, `get_live`, `join_live`, `end_live`, `end_live_by_host`,
 `leave_live`, `close_stale_lives`. **Jalankan di Supabase lalu deploy ulang Go.**
 LiveKit harus dikonfigurasi (`LIVEKIT_API_KEY/SECRET/URL`) — sama seperti voice room;
@@ -44,10 +44,10 @@ created_at}` ke topik **`live:<id>`**. Langgan `live:<id>` lewat `subscribe` **s
 di-resolve di server dari `sender_id` (tak bisa dipakai menyamar). Tidak disimpan — yang
 join di tengah hanya melihat komentar sejak ia masuk.
 
-**Koin & GIF gift — SUDAH ADA (migrasi 67, 2026-08-04):** dompet koin per pengguna +
+**Koin & GIF gift — SUDAH ADA (migrasi 69, 2026-08-04):** dompet koin per pengguna +
 katalog gift + kirim gift berbayar koin, disiarkan realtime.
 
-**ADA MIGRASI:** `20260804000067_coins_gifts.sql` — tabel `coin_wallets`, `gifts`
+**ADA MIGRASI:** `20260804000069_coins_gifts.sql` — tabel `coin_wallets`, `gifts`
 (katalog + seed 9 gift), `live_gifts` (riwayat); fungsi `get_wallet`, `topup_wallet`,
 `list_gifts`, `send_live_gift`. **Jalankan di Supabase lalu deploy Go.** Saldo awal
 bonus 120 koin dibuat otomatis saat pertama `get_wallet`.
