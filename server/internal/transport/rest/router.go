@@ -263,6 +263,16 @@ func NewRouter(d Deps) http.Handler {
 	mux.Handle("DELETE /api/v1/lives/{id}",
 		protected(http.HandlerFunc(d.Live.End)))
 
+	// koin & GIF gift
+	mux.Handle("GET /api/v1/wallet",
+		protected(http.HandlerFunc(d.Live.Wallet)))
+	mux.Handle("POST /api/v1/wallet/topup",
+		protected(http.HandlerFunc(d.Live.TopUp)))
+	mux.Handle("GET /api/v1/gifts",
+		protected(http.HandlerFunc(d.Live.Gifts)))
+	mux.Handle("POST /api/v1/lives/{id}/gifts",
+		protected(http.HandlerFunc(d.Live.SendGift)))
+
 	// --- telepon & video call ---
 	//
 	// Panggilan terikat pada percakapan. start memakai LiveKit yang sama dengan

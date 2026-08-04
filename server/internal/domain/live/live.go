@@ -23,13 +23,18 @@ import (
 	"unicode/utf8"
 
 	"github.com/ahmadadptr001/backend-syntra/internal/pkg/id"
+	"github.com/ahmadadptr001/backend-syntra/internal/pkg/topic"
 )
 
 var (
-	ErrNotFound     = errors.New("live: live tidak ditemukan")
-	ErrInvalidInput = errors.New("live: input tidak valid")
-	ErrNotAllowed   = errors.New("live: tidak diizinkan")
+	ErrNotFound         = errors.New("live: live tidak ditemukan")
+	ErrInvalidInput     = errors.New("live: input tidak valid")
+	ErrNotAllowed       = errors.New("live: tidak diizinkan")
+	ErrInsufficientCoin = errors.New("live: koin tidak cukup")
 )
+
+// EventLiveGift disiarkan ke topik live:<id> saat ada yang mengirim GIF gift.
+const EventLiveGift = "live.gift"
 
 // MaxTitleLength membatasi panjang judul live.
 const MaxTitleLength = 100
@@ -79,6 +84,25 @@ type Join struct {
 	CanPublish bool
 }
 
+// Gift adalah satu GIF/gift di katalog.
+type Gift struct {
+	ID    string
+	Code  string
+	Emoji string
+	Name  string
+	Cost  int
+}
+
+// GiftResult adalah hasil mengirim gift: detail gift, saldo baru pengirim, dan
+// nama pengirim yang di-resolve server (untuk siaran).
+type GiftResult struct {
+	Emoji          string
+	Name           string
+	Cost           int
+	Balance        int
+	SenderUsername string
+}
+
 // Repository adalah port penyimpanan.
 type Repository interface {
 	Create(ctx context.Context, l Live) error
@@ -92,6 +116,17 @@ type Repository interface {
 	Leave(ctx context.Context, liveID string) (endedLive bool, err error)
 
 	CloseStale(ctx context.Context, idleMinutes int) (int, error)
+
+	// Koin & gift.
+	GetWallet(ctx context.Context) (int, error)
+	TopUp(ctx context.Context, amount int) (int, error)
+	ListGifts(ctx context.Context) ([]Gift, error)
+	SendGift(ctx context.Context, giftRowID, liveID, giftID string) (GiftResult, error)
+}
+
+// Notifier menyiarkan kejadian live ke penonton yang terhubung (mis. gift masuk).
+type Notifier interface {
+	Publish(ctx context.Context, topic, eventType string, payload any) error
 }
 
 // TokenIssuer menerbitkan kredensial masuk ke media server.
@@ -105,13 +140,14 @@ type TokenIssuer interface {
 
 // Service memuat alur bisnis live.
 type Service struct {
-	repo   Repository
-	issuer TokenIssuer
+	repo     Repository
+	issuer   TokenIssuer
+	notifier Notifier
 }
 
 // NewService merangkai service.
-func NewService(repo Repository, issuer TokenIssuer) *Service {
-	return &Service{repo: repo, issuer: issuer}
+func NewService(repo Repository, issuer TokenIssuer, notifier Notifier) *Service {
+	return &Service{repo: repo, issuer: issuer, notifier: notifier}
 }
 
 // SFUReady menandai apakah media server sudah dikonfigurasi. Tanpa itu live
@@ -242,4 +278,50 @@ func (s *Service) CloseStale(ctx context.Context, idleMinutes int) (int, error) 
 		idleMinutes = 5
 	}
 	return s.repo.CloseStale(ctx, idleMinutes)
+}
+
+// Wallet mengembalikan saldo koin pemanggil (membuat dompet bila belum ada).
+func (s *Service) Wallet(ctx context.Context) (int, error) {
+	return s.repo.GetWallet(ctx)
+}
+
+// TopUp menambah koin (placeholder tanpa pembayaran nyata) dan mengembalikan saldo baru.
+func (s *Service) TopUp(ctx context.Context, amount int) (int, error) {
+	if amount <= 0 {
+		return 0, ErrInvalidInput
+	}
+	return s.repo.TopUp(ctx, amount)
+}
+
+// Gifts mengembalikan katalog GIF/gift yang aktif.
+func (s *Service) Gifts(ctx context.Context) ([]Gift, error) {
+	return s.repo.ListGifts(ctx)
+}
+
+// SendGift mengurangi koin pemanggil, mencatat gift, lalu MENYIARKAN-nya ke seluruh
+// penonton live lewat topik live:<id> (event live.gift). Mengembalikan detail gift +
+// saldo baru pengirim.
+func (s *Service) SendGift(ctx context.Context, liveID, giftID, senderID string) (GiftResult, error) {
+	if liveID == "" || giftID == "" {
+		return GiftResult{}, ErrInvalidInput
+	}
+
+	res, err := s.repo.SendGift(ctx, id.New(), liveID, giftID)
+	if err != nil {
+		return GiftResult{}, err
+	}
+
+	// Siarkan ke penonton (best effort — kegagalan siaran tidak membatalkan gift
+	// yang sudah tercatat & koin yang sudah terpotong).
+	if s.notifier != nil {
+		_ = s.notifier.Publish(ctx, topic.Live(liveID), EventLiveGift, map[string]any{
+			"live_id":         liveID,
+			"sender_id":       senderID,
+			"sender_username": res.SenderUsername,
+			"emoji":           res.Emoji,
+			"name":            res.Name,
+			"cost":            res.Cost,
+		})
+	}
+	return res, nil
 }

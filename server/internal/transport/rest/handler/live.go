@@ -22,6 +22,11 @@ type LiveService interface {
 	End(ctx context.Context, liveID string) error
 	Leave(ctx context.Context, liveID string) error
 	SFUReady() bool
+
+	Wallet(ctx context.Context) (int, error)
+	TopUp(ctx context.Context, amount int) (int, error)
+	Gifts(ctx context.Context) ([]live.Gift, error)
+	SendGift(ctx context.Context, liveID, giftID, senderID string) (live.GiftResult, error)
 }
 
 // Live menangani endpoint siaran langsung.
@@ -195,8 +200,94 @@ func (h *Live) Leave(w http.ResponseWriter, r *http.Request) {
 	httpx.NoContent(w)
 }
 
+type walletDTO struct {
+	Balance int `json:"balance"`
+}
+
+type giftDTO struct {
+	ID    string `json:"id"`
+	Code  string `json:"code"`
+	Emoji string `json:"emoji"`
+	Name  string `json:"name"`
+	Cost  int    `json:"cost"`
+}
+
+// Wallet menangani GET /api/v1/wallet — saldo koin pemanggil.
+func (h *Live) Wallet(w http.ResponseWriter, r *http.Request) {
+	balance, err := h.svc.Wallet(r.Context())
+	if err != nil {
+		writeLiveError(w, r, err)
+		return
+	}
+	httpx.OK(w, walletDTO{Balance: balance})
+}
+
+type topUpRequest struct {
+	Amount int `json:"amount"`
+}
+
+// TopUp menangani POST /api/v1/wallet/topup — isi ulang koin (placeholder).
+func (h *Live) TopUp(w http.ResponseWriter, r *http.Request) {
+	var req topUpRequest
+	if err := httpx.DecodeJSON(w, r, &req); err != nil {
+		httpx.Fail(w, r, http.StatusBadRequest, httpx.CodeBadRequest, err.Error())
+		return
+	}
+	balance, err := h.svc.TopUp(r.Context(), req.Amount)
+	if err != nil {
+		writeLiveError(w, r, err)
+		return
+	}
+	httpx.OK(w, walletDTO{Balance: balance})
+}
+
+// Gifts menangani GET /api/v1/gifts — katalog GIF/gift.
+func (h *Live) Gifts(w http.ResponseWriter, r *http.Request) {
+	gifts, err := h.svc.Gifts(r.Context())
+	if err != nil {
+		writeLiveError(w, r, err)
+		return
+	}
+	items := make([]giftDTO, 0, len(gifts))
+	for _, g := range gifts {
+		items = append(items, giftDTO{ID: g.ID, Code: g.Code, Emoji: g.Emoji, Name: g.Name, Cost: g.Cost})
+	}
+	httpx.Page(w, items, pageMeta{Count: len(items)})
+}
+
+type sendGiftRequest struct {
+	GiftID string `json:"gift_id"`
+}
+
+type sendGiftResultDTO struct {
+	Balance int    `json:"balance"`
+	Emoji   string `json:"emoji"`
+	Name    string `json:"name"`
+	Cost    int    `json:"cost"`
+}
+
+// SendGift menangani POST /api/v1/lives/{id}/gifts — kirim gift (kurangi koin +
+// siarkan ke penonton). 402 kalau koin kurang.
+func (h *Live) SendGift(w http.ResponseWriter, r *http.Request) {
+	var req sendGiftRequest
+	if err := httpx.DecodeJSON(w, r, &req); err != nil {
+		httpx.Fail(w, r, http.StatusBadRequest, httpx.CodeBadRequest, err.Error())
+		return
+	}
+	principal, _ := auth.FromContext(r.Context())
+	res, err := h.svc.SendGift(r.Context(), r.PathValue("id"), req.GiftID, principal.UserID)
+	if err != nil {
+		writeLiveError(w, r, err)
+		return
+	}
+	httpx.OK(w, sendGiftResultDTO{Balance: res.Balance, Emoji: res.Emoji, Name: res.Name, Cost: res.Cost})
+}
+
 func writeLiveError(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
+	case errors.Is(err, live.ErrInsufficientCoin):
+		httpx.Fail(w, r, http.StatusPaymentRequired, "insufficient_coins", "koin tidak cukup")
+
 	case errors.Is(err, live.ErrNotFound):
 		httpx.Fail(w, r, http.StatusNotFound, httpx.CodeNotFound, "live tidak ditemukan")
 

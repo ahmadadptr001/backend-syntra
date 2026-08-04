@@ -44,8 +44,28 @@ created_at}` ke topik **`live:<id>`**. Langgan `live:<id>` lewat `subscribe` **s
 di-resolve di server dari `sender_id` (tak bisa dipakai menyamar). Tidak disimpan — yang
 join di tengah hanya melihat komentar sejak ia masuk.
 
-**Belum ada (masih scaffold lokal di app):** **GIF gift + dompet koin** (butuh tabel
-saldo/transaksi + sumber GIF).
+**Koin & GIF gift — SUDAH ADA (migrasi 67, 2026-08-04):** dompet koin per pengguna +
+katalog gift + kirim gift berbayar koin, disiarkan realtime.
+
+**ADA MIGRASI:** `20260804000067_coins_gifts.sql` — tabel `coin_wallets`, `gifts`
+(katalog + seed 9 gift), `live_gifts` (riwayat); fungsi `get_wallet`, `topup_wallet`,
+`list_gifts`, `send_live_gift`. **Jalankan di Supabase lalu deploy Go.** Saldo awal
+bonus 120 koin dibuat otomatis saat pertama `get_wallet`.
+
+Endpoint:
+
+| Method | Path | Untuk |
+|---|---|---|
+| `GET` | `/api/v1/wallet` | saldo koin (`{balance}`) |
+| `POST` | `/api/v1/wallet/topup` | isi ulang `{amount}` → `{balance}` (placeholder, tanpa bayar) |
+| `GET` | `/api/v1/gifts` | katalog `{id, code, emoji, name, cost}` |
+| `POST` | `/api/v1/lives/{id}/gifts` | kirim `{gift_id}` → `{balance, emoji, name, cost}` |
+
+`send_live_gift` mengurangi koin **atomik** (server otoritas harga & saldo) lalu
+menyiarkan **`live.gift`** `{live_id, sender_id, sender_username, emoji, name, cost}` ke
+topik `live:<id>` — host & penonton yang sudah langganan langsung melihat gift melayang.
+Koin kurang → **HTTP 402** `insufficient_coins`. Pembayaran nyata belum ada (top-up masih
+placeholder gratis).
 
 ---
 
